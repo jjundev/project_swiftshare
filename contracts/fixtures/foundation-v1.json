@@ -1,0 +1,14 @@
+{
+  "fixture_version": 1,
+  "protocol_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "capabilities": [
+    "file_transfer"
+  ],
+  "terminal_result": {
+    "status": "completed"
+  }
+}
+

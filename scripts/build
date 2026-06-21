@@ -1,0 +1,49 @@
+#!/bin/sh
+
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SCOPE=${1:-all}
+
+build_macos() {
+  "$ROOT/scripts/doctor" macos
+  host_arch=$(uname -m)
+  xcodebuild \
+    -project "$ROOT/macos/SwiftShare.xcodeproj" \
+    -scheme SwiftShare \
+    -configuration Debug \
+    -destination "platform=macOS,arch=$host_arch" \
+    -derivedDataPath "$ROOT/.build/xcode" \
+    CODE_SIGNING_ALLOWED=YES \
+    CODE_SIGN_IDENTITY=- \
+    build
+}
+
+build_android() {
+  "$ROOT/scripts/doctor" android
+  sdk=${SWIFTSHARE_ANDROID_SDK:-${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}}
+  java_home=${JAVA_HOME:-}
+  if [ -z "$java_home" ] && [ -x "$ROOT/.tools/jdk17/Contents/Home/bin/java" ]; then
+    java_home="$ROOT/.tools/jdk17/Contents/Home"
+  elif [ -z "$java_home" ] && [ -d "/Applications/Android Studio.app/Contents/jbr/Contents/Home" ]; then
+    java_home="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+  fi
+  (cd "$ROOT/android" && ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk" JAVA_HOME="$java_home" ./gradlew --no-daemon :app:assembleDebug)
+}
+
+case "$SCOPE" in
+  all)
+    build_macos
+    build_android
+    ;;
+  macos)
+    build_macos
+    ;;
+  android)
+    build_android
+    ;;
+  *)
+    printf 'usage: %s [all|macos|android]\n' "$0" >&2
+    exit 2
+    ;;
+esac

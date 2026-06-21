@@ -1,0 +1,24 @@
+{
+  "fixture_version": 1,
+  "hello_hex": "0a320a06080110001800121f0a0d66696c655f7472616e7366657212060801100018001a06080110001800188080042080808002",
+  "accepted_decision_hex": "080112320a06080110001800121f0a0d66696c655f7472616e7366657212060801100018001a060801100018001880800420808080021a1a0a0408011000120d66696c655f7472616e736665721880808002",
+  "default_offer": {
+    "versions": [{ "major": 1, "minimum_minor": 0, "maximum_minor": 0 }],
+    "capabilities": [{
+      "name": "file_transfer",
+      "supported_versions": [{ "major": 1, "minimum_minor": 0, "maximum_minor": 0 }],
+      "required_versions": [{ "major": 1, "minimum_minor": 0, "maximum_minor": 0 }]
+    }],
+    "minimum_chunk_size": 65536,
+    "maximum_chunk_size": 4194304
+  },
+  "cases": [
+    { "name": "compatible", "outcome": "accepted", "major": 1, "minor": 0, "chunk_size": 4194304 },
+    { "name": "major_mismatch", "outcome": "no_common_major" },
+    { "name": "minor_mismatch", "outcome": "no_common_minor" },
+    { "name": "unknown_optional", "outcome": "accepted" },
+    { "name": "unknown_required", "outcome": "required_capability_unsupported" },
+    { "name": "busy", "outcome": "device_busy" },
+    { "name": "tie_break", "outcome": "simultaneous_initiation_lost" }
+  ]
+}

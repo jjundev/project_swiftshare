@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package swiftshare.transfer.v1;
+
+option java_package = "dev.swiftshare.contract.transfer.v1";
+option java_multiple_files = true;
+option swift_prefix = "SSV1";
+
+message FileEntry {
+  bytes item_id = 1;
+  string display_name = 2;
+  uint64 byte_count = 3;
+  bytes sha256 = 4;
+  string media_type = 5;
+  uint32 chunk_size = 6;
+}
+
+message Manifest {
+  repeated FileEntry entries = 1;
+}
+
+message Approval {
+  bool accepted = 1;
+  string reason_code = 2;
+}
+
+enum TransferPhase {
+  TRANSFER_PHASE_UNSPECIFIED = 0;
+  TRANSFER_PHASE_TRANSFERRING = 1;
+  TRANSFER_PHASE_VERIFYING = 2;
+  TRANSFER_PHASE_COMMITTING = 3;
+}
+
+message Progress {
+  bytes item_id = 1;
+  uint64 verified_bytes = 2;
+  uint32 verified_chunks = 3;
+  TransferPhase phase = 4;
+}
+
+message SenderFinished {
+  bytes item_id = 1;
+  uint64 byte_count = 2;
+  bytes sha256 = 3;
+}
+
+message Cancel {
+  string reason_code = 1;
+}
+
+enum TerminalStatus {
+  TERMINAL_STATUS_UNSPECIFIED = 0;
+  TERMINAL_STATUS_COMPLETED = 1;
+  TERMINAL_STATUS_REJECTED = 2;
+  TERMINAL_STATUS_CANCELLED = 3;
+  TERMINAL_STATUS_FAILED = 4;
+}
+
+enum ErrorCategory {
+  ERROR_CATEGORY_UNSPECIFIED = 0;
+  ERROR_CATEGORY_DISCOVERY = 1;
+  ERROR_CATEGORY_AUTHENTICATION = 2;
+  ERROR_CATEGORY_APPROVAL = 3;
+  ERROR_CATEGORY_PERMISSION = 4;
+  ERROR_CATEGORY_NETWORK = 5;
+  ERROR_CATEGORY_PROTOCOL = 6;
+  ERROR_CATEGORY_SOURCE = 7;
+  ERROR_CATEGORY_STORAGE = 8;
+  ERROR_CATEGORY_INTEGRITY = 9;
+  ERROR_CATEGORY_BUSY = 10;
+  ERROR_CATEGORY_INCOMPATIBLE_VERSION = 11;
+  ERROR_CATEGORY_CANCELLED = 12;
+}
+
+message TerminalResult {
+  TerminalStatus status = 1;
+  ErrorCategory error_category = 2;
+  string error_code = 3;
+  string committed_artifact_id = 4;
+}

@@ -1,0 +1,76 @@
+/* ============================================================
+   Aether — Color
+   A near-monochrome ink ramp on warm paper whites, with a
+   single confident brand accent (Signal Coral) used sparingly.
+   ============================================================ */
+:root {
+  /* ---- Ink ramp (warm-neutral, near-black to hairline) ---- */
+  --ink-900: #15161a; /* primary text, ink fills, primary buttons */
+  --ink-800: #24252b;
+  --ink-700: #3a3b42;
+  --ink-600: #54555e;
+  --ink-500: #6e6f79; /* secondary text */
+  --ink-400: #909199; /* tertiary text, placeholders */
+  --ink-300: #b6b7be; /* strong borders, disabled text */
+  --ink-200: #d7d8dc; /* default borders */
+  --ink-100: #e9e9ec; /* subtle borders, dividers */
+  --ink-50:  #f4f4f6; /* hairline fills */
+
+  /* ---- Surfaces (warm paper whites + inverse) ---- */
+  --surface:         #ffffff; /* page + raised cards */
+  --surface-muted:   #f5f5f3; /* sections, recessed panels */
+  --surface-sunken:  #ececea; /* wells, track backgrounds */
+  --surface-inverse: #15161a; /* dark sections, footers */
+
+  /* ---- Brand accent — Signal Coral ---- */
+  --accent-50:  #fff1ed;
+  --accent-100: #ffdfd4;
+  --accent-200: #ffc4b1;
+  --accent-300: #ffa98e;
+  --accent-400: #ff7e5c;
+  --accent-500: #ff5a36; /* core brand accent */
+  --accent-600: #ed4422; /* hover / pressed fill */
+  --accent-700: #c5341a; /* accent-as-text on light (AA) */
+
+  /* ---- Semantic support ---- */
+  --positive-500: #1f9d63;
+  --positive-50:  #e8f6ee;
+  --warning-500:  #c98a00;
+  --warning-50:   #fdf3da;
+  --critical-500: #d8362f;
+  --critical-50:  #fcebea;
+  --info-500:     #2d6be6;
+  --info-50:      #e9f0fd;
+
+  /* ============================================================
+     Semantic aliases — reference these in components, not raw ramp
+     ============================================================ */
+  --text-primary:   var(--ink-900);
+  --text-secondary: var(--ink-500);
+  --text-tertiary:  var(--ink-400);
+  --text-inverse:   #ffffff;
+  --text-accent:    var(--accent-700);
+  --text-on-accent: #ffffff;
+
+  --bg-page:    var(--surface);
+  --bg-subtle:  var(--surface-muted);
+  --bg-sunken:  var(--surface-sunken);
+  --bg-inverse: var(--surface-inverse);
+
+  --border-subtle:  var(--ink-100);
+  --border-default: var(--ink-200);
+  --border-strong:  var(--ink-300);
+
+  /* Actions: primary = ink (premium monochrome); accent = coral (high-emphasis) */
+  --action-primary-bg:       var(--ink-900);
+  --action-primary-bg-hover: #000000;
+  --action-primary-fg:       #ffffff;
+  --action-accent-bg:        var(--accent-500);
+  --action-accent-bg-hover:  var(--accent-600);
+  --action-accent-fg:        #ffffff;
+  --action-secondary-bg:       var(--surface-muted);
+  --action-secondary-bg-hover: var(--surface-sunken);
+  --action-secondary-fg:       var(--ink-900);
+
+  --focus-ring: var(--accent-500);
+}

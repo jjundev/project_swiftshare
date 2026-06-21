@@ -1,0 +1,39 @@
+/* ============================================================
+   Aether — Motion
+   Calm, confident, never bouncy. Short fades + small translates.
+   Standard easing is a symmetric ease used across most UI; ease-out
+   for entrances, ease-in-out for reversible state changes.
+   ============================================================ */
+:root {
+  /* ---- Easing ---- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.6, 1); /* @kind other */
+  --ease-out:      cubic-bezier(0, 0, 0.3, 1); /* @kind other */
+  --ease-in:       cubic-bezier(0.5, 0, 1, 1); /* @kind other */
+  --ease-in-out:   cubic-bezier(0.45, 0, 0.55, 1); /* @kind other */
+
+  /* ---- Durations ---- */
+  --dur-instant: 80ms;  /* @kind other */
+  --dur-fast:    160ms; /* @kind other */
+  --dur-base:    240ms; /* @kind other */
+  --dur-slow:    360ms; /* @kind other */
+  --dur-slower:  600ms; /* @kind other */
+
+  /* ---- Composed transitions ---- */
+  --transition-control: background-color var(--dur-fast) var(--ease-standard),
+                        border-color var(--dur-fast) var(--ease-standard),
+                        color var(--dur-fast) var(--ease-standard),
+                        box-shadow var(--dur-fast) var(--ease-standard),
+                        transform var(--dur-instant) var(--ease-standard);
+  --transition-reveal:  opacity var(--dur-slow) var(--ease-out),
+                        transform var(--dur-slow) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms; /* @kind other */
+    --dur-fast: 0ms; /* @kind other */
+    --dur-base: 0ms; /* @kind other */
+    --dur-slow: 0ms; /* @kind other */
+    --dur-slower: 0ms; /* @kind other */
+  }
+}

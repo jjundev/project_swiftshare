@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/elevation.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/motion.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/tokens/base.css">
+<link rel="stylesheet" href="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/styles.css">
+<script src="_ds/aether-design-system-7ccd5153-242f-46e5-85b9-a6e3f8cdbf80/_ds_bundle.js"></script>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{font-family:var(--font-sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  @keyframes ssPop{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+  @keyframes ssDot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+  @keyframes ssSpin{to{transform:rotate(360deg)}}
+  @keyframes ssFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes ssPing{0%{transform:scale(.6);opacity:.6}70%,100%{transform:scale(1.9);opacity:0}}
+  .ss-scroll::-webkit-scrollbar{width:9px}
+  .ss-scroll::-webkit-scrollbar-thumb{background:rgba(20,22,26,.16);border-radius:99px;border:3px solid transparent;background-clip:content-box}
+  .ss-scroll::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;overflow:hidden;font-family:var(--font-sans);background:#15161a">
+
+  <!-- ===== Wallpaper ===== -->
+  <div style="position:absolute;inset:0;background:{{ wallBg }}"></div>
+  <div style="position:absolute;inset:0;opacity:.5;background:radial-gradient(60% 50% at 50% 42%, rgba(255,255,255,.05), transparent 70%)"></div>
+
+  <!-- ===== Menu bar ===== -->
+  <div style="position:absolute;top:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:rgba(18,19,23,.34);backdrop-filter:saturate(180%) blur(22px);-webkit-backdrop-filter:saturate(180%) blur(22px);color:#fff;font-size:13px;z-index:30;border-bottom:.5px solid rgba(255,255,255,.08)">
+    <div style="display:flex;align-items:center;gap:18px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="#fff" style="opacity:.95"><path d="M17 11c0-2.2 1.7-3.2 1.8-3.3-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.7-3.2.7-.7 0-1.7-.7-2.8-.7-1.4 0-2.7.8-3.5 2.1-1.5 2.6-.4 6.4 1 8.5.7 1 1.5 2.2 2.6 2.1 1-.04 1.4-.67 2.7-.67 1.3 0 1.6.67 2.7.65 1.1-.02 1.8-1.05 2.5-2.05.5-.74.8-1.5 1-1.6-1.4-.6-1.8-2.1-1.8-2.4Zm-2.1-6.3c.6-.7 1-1.7.9-2.7-.85.04-1.9.57-2.5 1.27-.55.6-1 1.6-.9 2.6.95.08 1.9-.5 2.5-1.17Z"/></svg>
+      <span style="font-weight:700;letter-spacing:-.01em">SwiftShare</span>
+      <span style="opacity:.82">File</span>
+      <span style="opacity:.82">Edit</span>
+      <span style="opacity:.82">Window</span>
+      <span style="opacity:.82">Help</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" style="opacity:.92"><rect x="3" y="11" width="13" height="2.4" rx="1.2" fill="#fff" stroke="none"/><rect x="3" y="7" width="9" height="2.4" rx="1.2" fill="#fff" stroke="none"/><circle cx="18" cy="8.2" r="2.1" fill="#fff" stroke="none"/><circle cx="13.5" cy="12.2" r="2.1" fill="#fff" stroke="none"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff" style="opacity:.92"><path d="M12 18.5a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm0-4.6c1.6 0 3 .6 4.1 1.6l1.5-1.6A8.4 8.4 0 0 0 12 12a8.4 8.4 0 0 0-5.6 2.3l1.5 1.6A6 6 0 0 1 12 13.9Zm0-4.8c2.9 0 5.5 1.1 7.4 3l1.5-1.6A11.6 11.6 0 0 0 12 4.5 11.6 11.6 0 0 0 3.1 8.5l1.5 1.6A9.6 9.6 0 0 1 12 9.1Z"/></svg>
+      <svg width="26" height="14" viewBox="0 0 30 14" fill="none" style="opacity:.95"><rect x="1" y="2" width="23" height="10" rx="2.6" stroke="#fff" stroke-width="1.2" opacity=".55"/><rect x="2.6" y="3.6" width="16" height="6.8" rx="1.3" fill="#fff"/><rect x="25.2" y="5" width="1.8" height="4" rx="1" fill="#fff" opacity=".55"/></svg>
+      <span style="opacity:.92;font-variant-numeric:tabular-nums;white-space:nowrap">Fri 20 Jun&nbsp;&nbsp;9:41</span>
+      <!-- SwiftShare menu-bar icon -->
+      <button onClick="{{ toggleOpen }}" style="display:flex;align-items:center;justify-content:center;width:26px;height:22px;border:none;border-radius:6px;cursor:pointer;background:{{ iconBg }};transition:background .14s" aria-label="SwiftShare">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="3.1" fill="#ff5a36"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== Desktop hint ===== -->
+  <div style="position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);text-align:center;color:rgba(255,255,255,.34);z-index:1;pointer-events:none">
+    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" style="margin:0 auto 14px"><circle cx="12" cy="12" r="8" stroke="rgba(255,255,255,.4)" stroke-width="1.4"/><circle cx="12" cy="12" r="3" fill="rgba(255,90,54,.7)"/></svg>
+    <div style="font-size:15px;letter-spacing:-.01em">SwiftShare lives in your menu bar</div>
+    <div style="font-size:13px;margin-top:4px;opacity:.7">Click the halo icon, top-right, to open it</div>
+  </div>
+
+  <!-- ===== Popover ===== -->
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+  <div style="position:absolute;top:34px;right:9px;z-index:40">
+    <!-- pointer -->
+    <div style="position:absolute;top:-6px;right:25px;width:14px;height:14px;background:var(--surface);transform:rotate(45deg);border-top:.5px solid var(--border-subtle);border-left:.5px solid var(--border-subtle);box-shadow:-3px -3px 8px rgba(20,22,26,.04)"></div>
+
+    <div style="position:relative;width:392px;background:var(--surface);border-radius:18px;box-shadow:0 12px 28px rgba(20,22,26,.18),0 40px 88px rgba(20,22,26,.30);border:.5px solid rgba(20,22,26,.06);overflow:hidden;display:flex;flex-direction:column;max-height:592px">
+
+      <!-- ===== Header ===== -->
+      <div style="display:flex;align-items:center;gap:8px;padding:13px 14px 12px;border-bottom:1px solid var(--border-subtle);min-height:54px;flex:none">
+        <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ goHome }}" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:8px;background:transparent;color:var(--ink-600);cursor:pointer" style-hover="background:var(--surface-muted)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style="font:600 15px/1.2 var(--font-sans);letter-spacing:-.01em;color:var(--ink-900);flex:1">{{ title }}</div>
+        </sc-if>
+        <sc-if value="{{ vHome }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:9px;flex:1">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.2" stroke="var(--ink-900)" stroke-width="2.1"/><circle cx="12" cy="12" r="3.1" fill="var(--accent-500)"/></svg>
+            <div style="font:700 16px/1 var(--font-sans);letter-spacing:-.02em;color:var(--ink-900)">SwiftShare</div>
+          </div>
+          <button onClick="{{ goHistory }}" title="History" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:9px;background:transparent;color:var(--ink-500);cursor:pointer" style-hover="background:var(--surface-muted);color:var(--ink-900)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
+          </button>
+          <button onClick="{{ goSettings }}" title="Settings" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:9px;background:transparent;color:var(--ink-500);cursor:pointer" style-hover="background:var(--surface-muted);color:var(--ink-900)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </button>
+        </sc-if>
+      </div>
+
+      <!-- ===== Body ===== -->
+      <div class="ss-scroll" style="flex:1;overflow-y:auto;overflow-x:hidden">
+
+        <!-- ============ HOME ============ -->
+        <sc-if value="{{ vHome }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:14px 14px 16px">
+          <!-- paired peer card + drop zone -->
+          <div onClick="{{ onDrop }}" style="position:relative;border:1.5px dashed var(--border-strong);border-radius:16px;background:var(--surface-muted);padding:18px 16px;text-align:center;cursor:pointer;transition:all .16s" style-hover="border-color:var(--accent-400);background:var(--accent-50)">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-400)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M20 16v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
+            <div style="font:600 14px/1.3 var(--font-sans);color:var(--ink-800);letter-spacing:-.01em">Drag files here to send</div>
+            <div style="font:400 12.5px/1.4 var(--font-sans);color:var(--ink-500);margin-top:2px">or click to choose from Finder</div>
+          </div>
+
+          <!-- send to peer -->
+          <div style="margin-top:16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font:600 11px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);white-space:nowrap">Send to</span>
+            <button onClick="{{ goPair }}" style="display:inline-flex;align-items:center;gap:4px;border:none;background:transparent;color:var(--ink-500);font:500 12px/1 var(--font-sans);cursor:pointer;padding:2px;white-space:nowrap" style-hover="color:var(--accent-700)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Pair device
+            </button>
+          </div>
+
+          <sc-for list="{{ peers }}" as="peer" hint-placeholder-count="1">
+          <div style="display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--border-subtle);border-radius:14px;margin-bottom:8px;background:var(--surface)">
+            <div style="position:relative;flex:none;width:40px;height:40px;border-radius:11px;background:linear-gradient(150deg,#2b2c33,#15161a);display:grid;place-items:center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>
+              <span style="position:absolute;right:-2px;bottom:-2px;width:13px;height:13px;border-radius:99px;background:var(--positive-500);border:2.5px solid var(--surface)"></span>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font:600 14px/1.2 var(--font-sans);color:var(--ink-900);letter-spacing:-.01em">{{ peer.name }}</div>
+              <div style="font:400 12px/1.3 var(--font-mono);color:var(--ink-500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ peer.sub }}</div>
+            </div>
+            <button onClick="{{ peer.send }}" style="flex:none;display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 14px;border:none;border-radius:980px;background:var(--ink-900);color:#fff;font:600 12.5px/1 var(--font-sans);cursor:pointer;transition:transform .08s,background .14s" style-hover="background:#000" style-active="transform:scale(.97)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+              Send
+            </button>
+          </div>
+          </sc-for>
+
+          <!-- quick actions -->
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onClick="{{ sendClipboard }}" style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;border:1px solid var(--border-subtle);border-radius:14px;background:var(--surface);cursor:pointer;text-align:left" style-hover="border-color:var(--border-strong);background:var(--surface-muted)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-700)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
+              <div>
+                <div style="font:600 13px/1.2 var(--font-sans);color:var(--ink-900)">Send clipboard</div>
+                <div style="font:400 11.5px/1.3 var(--font-sans);color:var(--ink-500);margin-top:1px">Text on your Mac now</div>
+              </div>
+            </button>
+            <button onClick="{{ triggerIncoming }}" style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;border:1px solid var(--border-subtle);border-radius:14px;background:var(--surface);cursor:pointer;text-align:left" style-hover="border-color:var(--border-strong);background:var(--surface-muted)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-700)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m7 12 5 5 5-5"/><path d="M20 17v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
+              <div>
+                <div style="font:600 13px/1.2 var(--font-sans);color:var(--ink-900)">Receive</div>
+                <div style="font:400 11.5px/1.3 var(--font-sans);color:var(--ink-500);margin-top:1px">Incoming from Pixel</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ SEND CONFIRM ============ -->
+        <sc-if value="{{ vSend }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:14px">
+          <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:13px;background:var(--surface-muted);margin-bottom:13px">
+            <span style="font:500 12px/1 var(--font-sans);color:var(--ink-500)">To</span>
+            <div style="width:24px;height:24px;border-radius:7px;background:linear-gradient(150deg,#2b2c33,#15161a);display:grid;place-items:center">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/></svg>
+            </div>
+            <span style="font:600 13.5px/1 var(--font-sans);color:var(--ink-900);white-space:nowrap">{{ batchPeer }}</span>
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 11.5px/1 var(--font-sans);color:var(--positive-500)"><span style="width:7px;height:7px;border-radius:99px;background:var(--positive-500)"></span>Ready</span>
+          </div>
+
+          <div style="border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden">
+            <sc-for list="{{ batchItems }}" as="it" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-bottom:1px solid var(--border-subtle)">
+              <div style="flex:none;width:34px;height:34px;border-radius:9px;background:var(--surface-sunken);display:grid;place-items:center">
+                <span style="font:600 9px/1 var(--font-mono);color:var(--ink-600);letter-spacing:.02em">{{ it.ext }}</span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font:500 13px/1.2 var(--font-sans);color:var(--ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.name }}</div>
+              </div>
+              <span style="flex:none;font:400 12px/1 var(--font-mono);color:var(--ink-500)">{{ it.sizeLabel }}</span>
+            </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 12px;background:var(--surface-muted)">
+              <span style="font:600 12.5px/1 var(--font-sans);color:var(--ink-700);white-space:nowrap">{{ batchCountLabel }}</span>
+              <span style="font:700 13px/1 var(--font-mono);color:var(--ink-900);white-space:nowrap">{{ batchTotalLabel }}</span>
+            </div>
+          </div>
+
+          <sc-if value="{{ batchWarn }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:9px;padding:10px 12px;border-radius:12px;background:var(--warning-50);margin-top:12px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warning-500)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            <div style="font:400 11.5px/1.4 var(--font-sans);color:var(--ink-700)">Shared from another app — this source can't resume after a restart. SwiftShare's picker keeps durable access for long transfers.</div>
+          </div>
+          </sc-if>
+
+          <div style="display:flex;gap:9px;margin-top:14px">
+            <button onClick="{{ goHome }}" style="flex:none;height:38px;padding:0 18px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-800);font:600 13px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--surface-muted)">Cancel</button>
+            <button onClick="{{ confirmSend }}" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;border:none;border-radius:980px;background:var(--accent-500);color:#fff;font:600 13.5px/1 var(--font-sans);cursor:pointer;transition:transform .08s,background .14s;white-space:nowrap" style-hover="background:var(--accent-600)" style-active="transform:scale(.98)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+              Send {{ batchTotalLabel }}
+            </button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ TRANSFER ============ -->
+        <sc-if value="{{ vTransfer }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:18px 16px 18px">
+          <!-- peer + direction -->
+          <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:18px">
+            <div style="text-align:center">
+              <div style="width:46px;height:46px;border-radius:13px;background:#fff;border:1px solid var(--border-default);display:grid;place-items:center;margin:0 auto">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="var(--ink-900)" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="var(--accent-500)"/></svg>
+              </div>
+              <div style="font:500 11px/1 var(--font-sans);color:var(--ink-500);margin-top:6px;white-space:nowrap">MacBook Pro</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink-300)">
+              <svg width="46" height="14" viewBox="0 0 46 14" fill="none" style="transform:{{ arrowFlip }}"><path d="M0 7h40M36 2l6 5-6 5" stroke="var(--accent-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="text-align:center">
+              <div style="width:46px;height:46px;border-radius:13px;background:linear-gradient(150deg,#2b2c33,#15161a);display:grid;place-items:center;margin:0 auto">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>
+              </div>
+              <div style="font:500 11px/1 var(--font-sans);color:var(--ink-500);margin-top:6px;white-space:nowrap">{{ transferPeer }}</div>
+            </div>
+          </div>
+
+          <!-- ACTIVE -->
+          <sc-if value="{{ transferActive }}" hint-placeholder-val="{{ true }}">
+          <div style="text-align:center">
+            <div style="display:inline-flex;align-items:center;gap:8px;font:600 15px/1.2 var(--font-sans);color:var(--ink-900);letter-spacing:-.01em">
+              <sc-if value="{{ showSpinner }}" hint-placeholder-val="{{ true }}">
+                <span style="width:15px;height:15px;border-radius:99px;border:2px solid var(--ink-200);border-top-color:var(--accent-500);display:inline-block;animation:ssSpin .7s linear infinite"></span>
+              </sc-if>
+              {{ phaseLabel }}
+            </div>
+            <div style="font:400 12.5px/1.3 var(--font-mono);color:var(--ink-500);margin-top:7px;min-height:16px">{{ phaseSub }}</div>
+
+            <sc-if value="{{ showBar }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:16px">
+              <div style="height:8px;border-radius:99px;background:var(--surface-sunken);overflow:hidden">
+                <div style="height:100%;width:{{ barWidth }};background:var(--accent-500);border-radius:99px;transition:width .14s linear"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px;font:500 12px/1 var(--font-mono);color:var(--ink-600)">
+                <span style="white-space:nowrap">{{ bytesLabel }}</span>
+                <span>{{ pctLabel }}</span>
+              </div>
+            </div>
+            </sc-if>
+
+            <button onClick="{{ cancelTransfer }}" style="margin-top:20px;height:34px;padding:0 18px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-700);font:600 12.5px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--critical-50);border-color:var(--critical-500);color:var(--critical-500)">Cancel transfer</button>
+          </div>
+          </sc-if>
+
+          <!-- DONE -->
+          <sc-if value="{{ transferDone }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <div style="position:relative;width:52px;height:52px;margin:0 auto 12px">
+              <span style="position:absolute;inset:0;border-radius:99px;background:var(--positive-500);opacity:.18;animation:ssPing 1.4s ease-out"></span>
+              <div style="position:relative;width:52px;height:52px;border-radius:99px;background:var(--positive-500);display:grid;place-items:center">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </div>
+            </div>
+            <div style="font:600 16px/1.2 var(--font-sans);color:var(--ink-900);letter-spacing:-.01em">{{ doneTitle }}</div>
+            <div style="font:400 12.5px/1.4 var(--font-sans);color:var(--ink-500);margin-top:5px">{{ doneSub }}</div>
+            <div style="display:flex;gap:9px;justify-content:center;margin-top:18px">
+              <sc-if value="{{ doneReveal }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ goHome }}" style="height:36px;padding:0 16px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-800);font:600 13px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--surface-muted)">Reveal in Finder</button>
+              </sc-if>
+              <button onClick="{{ goHome }}" style="height:36px;padding:0 22px;border:none;border-radius:980px;background:var(--ink-900);color:#fff;font:600 13px/1 var(--font-sans);cursor:pointer" style-hover="background:#000">Done</button>
+            </div>
+          </div>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <!-- ============ RECEIVE APPROVAL ============ -->
+        <sc-if value="{{ vReceive }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:16px 14px">
+          <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
+            <div style="position:relative;flex:none;width:44px;height:44px;border-radius:12px;background:linear-gradient(150deg,#2b2c33,#15161a);display:grid;place-items:center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>
+            </div>
+            <div style="flex:1">
+              <div style="font:600 15px/1.2 var(--font-sans);color:var(--ink-900);letter-spacing:-.01em">{{ incomingPeer }} wants to send</div>
+              <div style="font:400 12.5px/1.3 var(--font-sans);color:var(--ink-500);margin-top:2px">Verified paired device · LAN Mode</div>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden">
+            <sc-for list="{{ incomingItems }}" as="it" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-bottom:1px solid var(--border-subtle)">
+              <div style="flex:none;width:34px;height:34px;border-radius:9px;background:var(--surface-sunken);display:grid;place-items:center"><span style="font:600 9px/1 var(--font-mono);color:var(--ink-600)">{{ it.ext }}</span></div>
+              <div style="flex:1;min-width:0"><div style="font:500 13px/1.2 var(--font-sans);color:var(--ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.name }}</div></div>
+              <span style="font:400 12px/1 var(--font-mono);color:var(--ink-500)">{{ it.sizeLabel }}</span>
+            </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 12px;background:var(--surface-muted)">
+              <span style="font:600 12.5px/1 var(--font-sans);color:var(--ink-700);white-space:nowrap">{{ incomingCountLabel }}</span>
+              <span style="font:700 13px/1 var(--font-mono);color:var(--ink-900);white-space:nowrap">{{ incomingTotalLabel }}</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-top:11px;font:400 11.5px/1.4 var(--font-sans);color:var(--ink-500)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-400)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            Saves to {{ destination }}
+          </div>
+
+          <div style="display:flex;gap:9px;margin-top:14px">
+            <button onClick="{{ declineIncoming }}" style="flex:none;height:38px;padding:0 18px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-800);font:600 13px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--surface-muted)">Decline</button>
+            <button onClick="{{ acceptIncoming }}" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;border:none;border-radius:980px;background:var(--ink-900);color:#fff;font:600 13.5px/1 var(--font-sans);cursor:pointer;transition:transform .08s" style-hover="background:#000" style-active="transform:scale(.98)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              Accept
+            </button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ PAIR ============ -->
+        <sc-if value="{{ vPair }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:16px 16px 18px">
+
+          <sc-if value="{{ pairWaiting }}" hint-placeholder-val="{{ true }}">
+          <div style="text-align:center">
+            <div style="font:400 13px/1.4 var(--font-sans);color:var(--ink-600);margin-bottom:14px">Open SwiftShare on your Android device and scan this code.</div>
+            <div style="position:relative;width:188px;height:188px;margin:0 auto;padding:14px;background:#fff;border:1px solid var(--border-subtle);border-radius:18px;box-shadow:var(--shadow-sm)">
+              {{ qrSvg }}
+              <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;border-radius:11px;background:#fff;display:grid;place-items:center;box-shadow:0 0 0 5px #fff">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="var(--ink-900)" stroke-width="2.1"/><circle cx="12" cy="12" r="3.1" fill="var(--accent-500)"/></svg>
+              </div>
+            </div>
+            <div style="margin-top:14px;display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:980px;background:var(--surface-muted);font:500 12px/1 var(--font-sans);color:var(--ink-600);white-space:nowrap">
+              <span style="width:14px;height:14px;border-radius:99px;border:2px solid var(--ink-200);border-top-color:var(--accent-500);animation:ssSpin .7s linear infinite"></span>
+              Waiting for scan · expires in {{ pairCountdown }}s
+            </div>
+            <div style="margin-top:16px;padding:11px 13px;border-radius:12px;background:var(--surface-muted);text-align:left">
+              <div style="font:600 10.5px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px">This Mac</div>
+              <div style="font:600 13px/1.2 var(--font-sans);color:var(--ink-900);white-space:nowrap">MacBook Pro</div>
+              <div style="font:400 11px/1.2 var(--font-mono);color:var(--ink-500);margin-top:5px;white-space:nowrap">SHA-256 {{ fingerprint }}</div>
+            </div>
+            <button onClick="{{ simulateScan }}" style="margin-top:14px;height:34px;padding:0 18px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-600);font:600 12px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--surface-muted)">▶ Simulate Android scan</button>
+          </div>
+          </sc-if>
+
+          <sc-if value="{{ pairSuccess }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <div style="position:relative;width:52px;height:52px;margin:0 auto 12px">
+              <span style="position:absolute;inset:0;border-radius:99px;background:var(--positive-500);opacity:.18;animation:ssPing 1.4s ease-out"></span>
+              <div style="position:relative;width:52px;height:52px;border-radius:99px;background:var(--positive-500);display:grid;place-items:center">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </div>
+            </div>
+            <div style="font:600 16px/1.2 var(--font-sans);color:var(--ink-900);letter-spacing:-.01em">Paired with Pixel 8 Pro</div>
+            <div style="font:400 12.5px/1.4 var(--font-sans);color:var(--ink-500);margin-top:5px;max-width:280px;margin-left:auto;margin-right:auto">Identities are pinned. This device can now send and receive on your LAN.</div>
+            <button onClick="{{ goHome }}" style="margin-top:18px;height:36px;padding:0 24px;border:none;border-radius:980px;background:var(--ink-900);color:#fff;font:600 13px/1 var(--font-sans);cursor:pointer" style-hover="background:#000">Done</button>
+          </div>
+          </sc-if>
+
+        </div>
+        </sc-if>
+
+        <!-- ============ HISTORY ============ -->
+        <sc-if value="{{ vHistory }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:8px 14px 14px">
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--border-subtle)">
+            <div style="flex:none;width:34px;height:34px;border-radius:10px;background:{{ h.iconBg }};display:grid;place-items:center;color:{{ h.iconFg }}">
+              <sc-if value="{{ h.sent }}" hint-placeholder-val="{{ true }}">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+              </sc-if>
+              <sc-if value="{{ h.received }}" hint-placeholder-val="{{ false }}">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7 7 17M16 17H7V8"/></svg>
+              </sc-if>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font:500 13.5px/1.2 var(--font-sans);color:var(--ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.title }}</div>
+              <div style="font:400 11.5px/1.3 var(--font-mono);color:var(--ink-500);margin-top:2px">{{ h.meta }}</div>
+            </div>
+            <span style="flex:none;font:600 10.5px/1 var(--font-sans);padding:4px 9px;border-radius:980px;background:{{ h.statusBg }};color:{{ h.statusFg }}">{{ h.statusText }}</span>
+          </div>
+          </sc-for>
+          <button onClick="{{ goSettings }}" style="width:100%;margin-top:14px;height:34px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-600);font:600 12.5px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--surface-muted)">Manage history & diagnostics</button>
+        </div>
+        </sc-if>
+
+        <!-- ============ SETTINGS ============ -->
+        <sc-if value="{{ vSettings }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:6px 14px 16px">
+
+          <div style="font:600 10.5px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);margin:12px 2px 8px">Receiving</div>
+          <div style="border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border-subtle)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-600)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <div style="flex:1"><div style="font:500 13.5px/1.2 var(--font-sans);color:var(--ink-900)">Save to</div></div>
+              <span style="font:400 12px/1 var(--font-mono);color:var(--ink-500)">{{ destination }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border-subtle)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-600)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+              <div style="flex:1">
+                <div style="font:500 13.5px/1.2 var(--font-sans);color:var(--ink-900)">Auto-accept from Pixel 8 Pro</div>
+                <div style="font:400 11px/1.3 var(--font-sans);color:var(--ink-500);margin-top:2px">Skip approval for this trusted device</div>
+              </div>
+              <button onClick="{{ toggleAutoAccept }}" style="flex:none;width:42px;height:25px;border-radius:99px;border:none;cursor:pointer;padding:0;position:relative;background:{{ autoAcceptBg }};transition:background .16s">
+                <span style="position:absolute;top:2.5px;left:{{ autoAcceptX }};width:20px;height:20px;border-radius:99px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .16s"></span>
+              </button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-600)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5"/><rect x="2" y="12" width="20" height="8" rx="2"/><path d="M6 16h.01"/></svg>
+              <div style="flex:1"><div style="font:500 13.5px/1.2 var(--font-sans);color:var(--ink-900)">Open at login</div></div>
+              <button onClick="{{ toggleLaunch }}" style="flex:none;width:42px;height:25px;border-radius:99px;border:none;cursor:pointer;padding:0;position:relative;background:{{ launchBg }};transition:background .16s">
+                <span style="position:absolute;top:2.5px;left:{{ launchX }};width:20px;height:20px;border-radius:99px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .16s"></span>
+              </button>
+            </div>
+          </div>
+
+          <div style="font:600 10.5px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);margin:18px 2px 8px">Paired devices</div>
+          <div style="border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden">
+            <sc-for list="{{ peers }}" as="peer" hint-placeholder-count="1">
+            <div style="display:flex;align-items:center;gap:11px;padding:11px 12px">
+              <div style="flex:none;width:34px;height:34px;border-radius:9px;background:linear-gradient(150deg,#2b2c33,#15161a);display:grid;place-items:center">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/></svg>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font:600 13.5px/1.2 var(--font-sans);color:var(--ink-900)">{{ peer.name }}</div>
+                <div style="font:400 11px/1.3 var(--font-mono);color:var(--ink-500);margin-top:2px">Paired 12 Jun · key pinned</div>
+              </div>
+              <button onClick="{{ peer.unpair }}" style="flex:none;height:28px;padding:0 12px;border:1px solid var(--border-default);border-radius:980px;background:var(--surface);color:var(--ink-600);font:600 11.5px/1 var(--font-sans);cursor:pointer" style-hover="background:var(--critical-50);border-color:var(--critical-500);color:var(--critical-500)">Unpair</button>
+            </div>
+            </sc-for>
+          </div>
+
+          <div style="font:600 10.5px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);margin:18px 2px 8px">Data</div>
+          <div style="border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden">
+            <button onClick="{{ noop }}" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px;border:none;border-bottom:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;text-align:left" style-hover="background:var(--surface-muted)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-600)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>
+              <span style="flex:1;font:500 13.5px/1.2 var(--font-sans);color:var(--ink-900)">Export diagnostic logs</span>
+              <span style="font:400 11.5px/1 var(--font-mono);color:var(--ink-400)">redacted</span>
+            </button>
+            <button onClick="{{ noop }}" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px;border:none;background:var(--surface);cursor:pointer;text-align:left" style-hover="background:var(--surface-muted)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--critical-500)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              <span style="flex:1;font:500 13.5px/1.2 var(--font-sans);color:var(--critical-500)">Clear transfer history</span>
+            </button>
+          </div>
+
+          <div style="text-align:center;font:400 11px/1.4 var(--font-mono);color:var(--ink-400);margin-top:16px">SwiftShare 0.4.0 (dev) · LAN Mode<br>No account · stays on your network</div>
+        </div>
+        </sc-if>
+
+      </div>
+
+      <!-- ===== Footer (home) ===== -->
+      <sc-if value="{{ vHome }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--border-subtle);background:var(--surface-muted);flex:none">
+        <span style="width:8px;height:8px;border-radius:99px;background:var(--positive-500);box-shadow:0 0 0 3px var(--positive-50)"></span>
+        <span style="font:500 12px/1 var(--font-sans);color:var(--ink-600);white-space:nowrap">On Home-WiFi · 1 device paired</span>
+        <span style="margin-left:auto;font:500 12px/1 var(--font-mono);color:var(--ink-400);white-space:nowrap">LAN Mode</span>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 924, &quot;height&quot;: 540 },
+  &quot;startView&quot;: {
+    &quot;editor&quot;: &quot;enum&quot;,
+    &quot;options&quot;: [&quot;home&quot;, &quot;pair&quot;, &quot;send&quot;, &quot;transfer&quot;, &quot;receive&quot;, &quot;history&quot;, &quot;settings&quot;],
+    &quot;default&quot;: &quot;home&quot;,
+    &quot;tsType&quot;: &quot;string&quot;
+  },
+  &quot;wallpaper&quot;: {
+    &quot;editor&quot;: &quot;enum&quot;,
+    &quot;options&quot;: [&quot;Midnight&quot;, &quot;Graphite&quot;, &quot;Dune&quot;],
+    &quot;default&quot;: &quot;Midnight&quot;,
+    &quot;tsType&quot;: &quot;string&quot;
+  },
+  &quot;transferSeconds&quot;: {
+    &quot;editor&quot;: &quot;float&quot;,
+    &quot;default&quot;: 3.4,
+    &quot;min&quot;: 1,
+    &quot;max&quot;: 10,
+    &quot;step&quot;: 0.2,
+    &quot;tsType&quot;: &quot;number&quot;
+  }
+}">
+class Component extends DCLogic {
+  state = {
+    open: true,
+    view: 'home',
+    direction: 'send',
+    phase: 'idle',          // connecting | awaiting | transferring | verifying | done
+    progress: 0,
+    batch: null,
+    incoming: null,
+    autoAccept: false,
+    launch: true,
+    pairPhase: 'waiting',   // waiting | success
+    pairCountdown: 60,
+    peers: [
+      { id: 'pixel', name: 'Pixel 8 Pro', sub: 'Android 14 · On Home-WiFi' }
+    ],
+    history: [
+      { id: 'h1', dir: 'send', peer: 'Pixel 8 Pro', status: 'completed', what: 'Sunset-clip.mov', bytes: 1240000000, when: 'Yesterday 18:04' },
+      { id: 'h2', dir: 'receive', peer: 'Pixel 8 Pro', status: 'completed', what: '4 photos', bytes: 18400000, when: 'Yesterday 09:12' },
+      { id: 'h3', dir: 'send', peer: 'Pixel 8 Pro', status: 'cancelled', what: '2 files', bytes: 240000000, when: 'Tue 14:30' },
+      { id: 'h4', dir: 'send', peer: 'Pixel 8 Pro', status: 'completed', what: 'Clipboard text', bytes: 64, when: 'Mon 11:02' }
+    ]
+  };
+
+  // ---- helpers ----
+  fmt(b) {
+    if (b >= 1e9) return (b / 1e9).toFixed(b >= 1e10 ? 0 : 1) + ' GB';
+    if (b >= 1e6) return (b / 1e6).toFixed(b >= 1e8 ? 0 : 1) + ' MB';
+    if (b >= 1e3) return (b / 1e3).toFixed(0) + ' KB';
+    return b + ' B';
+  }
+  ext(name) {
+    const i = name.lastIndexOf('.');
+    return i > -1 ? name.slice(i + 1).toUpperCase().slice(0, 4) : 'FILE';
+  }
+  total(items) { return items.reduce((s, i) => s + i.bytes, 0); }
+
+  componentDidMount() {
+    const sv = this.props.startView;
+    if (!sv || sv === 'home') return;
+    if (sv === 'send') this.startSend();
+    else if (sv === 'receive') this.triggerIncoming();
+    else if (sv === 'pair') this.goPair();
+    else if (sv === 'transfer') this.runTransfer('send', { peer: 'Pixel 8 Pro', kind: 'files', count: 3, bytes: 420000000, what: '3 files' });
+    else this.setState({ view: sv });
+  }
+  componentWillUnmount() { this.clearTimers(); }
+  clearTimers() {
+    clearTimeout(this._t1); clearTimeout(this._t2); clearTimeout(this._t3);
+    clearInterval(this._iv); clearInterval(this._cd);
+  }
+
+  // ---- navigation ----
+  toggleOpen = () => this.setState(s => ({ open: !s.open }));
+  go = (view) => { this.clearTimers(); this.setState({ view }); };
+  goHome = () => { this.clearTimers(); this.setState({ view: 'home', phase: 'idle', progress: 0, batch: null, incoming: null }); };
+  goHistory = () => this.go('history');
+  goSettings = () => this.go('settings');
+  noop = () => {};
+
+  // ---- pairing ----
+  goPair = () => {
+    this.clearTimers();
+    this.setState({ view: 'pair', pairPhase: 'waiting', pairCountdown: 60 });
+    this._cd = setInterval(() => this.setState(s => ({ pairCountdown: Math.max(0, s.pairCountdown - 1) })), 1000);
+  };
+  simulateScan = () => {
+    clearInterval(this._cd);
+    this.setState({ pairPhase: 'success' });
+  };
+
+  // ---- sending ----
+  sampleBatch() {
+    return {
+      peer: 'Pixel 8 Pro', kind: 'files', warn: false,
+      items: [
+        { name: 'IMG_4821.HEIC', bytes: 4200000 },
+        { name: 'IMG_4822.HEIC', bytes: 3800000 },
+        { name: 'Sunset-clip.mov', bytes: 412000000 }
+      ]
+    };
+  }
+  onDrop = () => this.setState({ view: 'send', batch: this.sampleBatch() });
+  startSend = () => this.setState({ view: 'send', batch: this.sampleBatch() });
+  sendClipboard = () => {
+    this.setState({
+      direction: 'send',
+      batch: { peer: 'Pixel 8 Pro', kind: 'clipboard', warn: false, items: [{ name: 'Clipboard text (1 line)', bytes: 84 }] }
+    });
+    this.runTransfer('send', { peer: 'Pixel 8 Pro', kind: 'clipboard', count: 1, bytes: 84, what: 'Clipboard text' });
+  };
+  confirmSend = () => {
+    const b = this.state.batch;
+    this.runTransfer('send', {
+      peer: b.peer, kind: b.kind, count: b.items.length,
+      bytes: this.total(b.items), what: b.items.length === 1 ? b.items[0].name : b.items.length + ' files'
+    });
+  };
+
+  // ---- receiving ----
+  triggerIncoming = () => {
+    this.clearTimers();
+    this.setState({
+      view: 'receive',
+      incoming: {
+        peer: 'Pixel 8 Pro', kind: 'files',
+        items: [
+          { name: 'Scan_2026-06-20.pdf', bytes: 2100000 },
+          { name: 'Receipt.jpg', bytes: 940000 }
+        ]
+      }
+    });
+  };
+  acceptIncoming = () => {
+    const inc = this.state.incoming;
+    this.runTransfer('receive', {
+      peer: inc.peer, kind: inc.kind, count: inc.items.length,
+      bytes: this.total(inc.items), what: inc.items.length + ' files'
+    });
+  };
+  declineIncoming = () => {
+    const inc = this.state.incoming;
+    this.addHistory({ dir: 'receive', peer: inc.peer, status: 'rejected', what: inc.items.length + ' files', bytes: this.total(inc.items) });
+    this.goHome();
+  };
+
+  // ---- transfer engine ----
+  runTransfer(direction, meta) {
+    this.clearTimers();
+    this._meta = meta;
+    this.setState({ view: 'transfer', direction, phase: 'connecting', progress: 0 });
+    const needApproval = direction === 'send' && !this.state.autoAccept;
+    this._t1 = setTimeout(() => {
+      if (needApproval) {
+        this.setState({ phase: 'awaiting' });
+        this._t2 = setTimeout(() => this.beginBytes(), 1300);
+      } else {
+        this.beginBytes();
+      }
+    }, 850);
+  }
+  beginBytes() {
+    const secs = this.props.transferSeconds || 3.4;
+    const inc = 55 / (secs * 1000);
+    this.setState({ phase: 'transferring', progress: 0 });
+    this._iv = setInterval(() => {
+      this.setState(s => {
+        const p = s.progress + inc;
+        if (p >= 1) {
+          clearInterval(this._iv);
+          this._t3 = setTimeout(() => this.finish(), 750);
+          return { progress: 1, phase: 'verifying' };
+        }
+        return { progress: p };
+      });
+    }, 55);
+  }
+  finish() {
+    const m = this._meta;
+    this.addHistory({ dir: this.state.direction, peer: m.peer, status: 'completed', what: m.what, bytes: m.bytes });
+    this.setState({ phase: 'done' });
+  }
+  cancelTransfer = () => {
+    this.clearTimers();
+    const m = this._meta || {};
+    this.addHistory({ dir: this.state.direction, peer: m.peer || 'Pixel 8 Pro', status: 'cancelled', what: m.what || '—', bytes: m.bytes || 0 });
+    this.goHome();
+  };
+
+  addHistory(entry) {
+    this.setState(s => ({
+      history: [{ id: 'h' + Date.now(), when: 'Just now', ...entry }, ...s.history]
+    }));
+  }
+
+  // ---- settings ----
+  toggleAutoAccept = () => this.setState(s => ({ autoAccept: !s.autoAccept }));
+  toggleLaunch = () => this.setState(s => ({ launch: !s.launch }));
+  unpair = (id) => this.setState(s => ({ peers: s.peers.filter(p => p.id !== id) }));
+
+  // ---- QR ----
+  buildQR() {
+    const n = 25, cell = 8;
+    let seed = 90210;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const finderHit = (x, y) => {
+      const box = (ox, oy) => x >= ox && x < ox + 7 && y >= oy && y < oy + 7;
+      return box(0, 0) || box(n - 7, 0) || box(0, n - 7);
+    };
+    const rects = [];
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      if (finderHit(x, y)) continue;
+      const cx = x - 12, cy = y - 12;
+      if (cx * cx + cy * cy < 11) continue; // clear center for logo
+      if (rnd() > 0.52) rects.push(React.createElement('rect', { key: x + '_' + y, x: x * cell, y: y * cell, width: cell, height: cell, fill: '#15161a' }));
+    }
+    const finder = (ox, oy) => [
+      React.createElement('rect', { key: 'a' + ox + oy, x: ox * cell, y: oy * cell, width: 7 * cell, height: 7 * cell, rx: 6, fill: '#15161a' }),
+      React.createElement('rect', { key: 'b' + ox + oy, x: (ox + 1) * cell, y: (oy + 1) * cell, width: 5 * cell, height: 5 * cell, rx: 4, fill: '#fff' }),
+      React.createElement('rect', { key: 'c' + ox + oy, x: (ox + 2) * cell, y: (oy + 2) * cell, width: 3 * cell, height: 3 * cell, rx: 2, fill: '#15161a' })
+    ];
+    const all = [...rects, ...finder(0, 0), ...finder(n - 7, 0), ...finder(0, n - 7)];
+    return React.createElement('svg', { viewBox: `0 0 ${n * cell} ${n * cell}`, width: '100%', height: '100%', style: { display: 'block' } }, all);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const v = s.view;
+    const peer = s.peers[0];
+    const titles = { send: 'Send', transfer: s.direction === 'send' ? 'Sending' : 'Receiving', receive: 'Incoming transfer', pair: 'Pair a device', history: 'Transfer history', settings: 'Settings' };
+
+    const peersVM = s.peers.map(p => ({ ...p, send: () => this.startSend(p), unpair: () => this.unpair(p.id) }));
+
+    // batch
+    const b = s.batch;
+    const batchItems = b ? b.items.map(i => ({ name: i.name, ext: this.ext(i.name), sizeLabel: this.fmt(i.bytes) })) : [];
+    const batchTotalBytes = b ? this.total(b.items) : 0;
+
+    // incoming
+    const inc = s.incoming;
+    const incItems = inc ? inc.items.map(i => ({ name: i.name, ext: this.ext(i.name), sizeLabel: this.fmt(i.bytes) })) : [];
+
+    // transfer display
+    const m = this._meta || {};
+    const pct = Math.round(s.progress * 100);
+    const sentBytes = Math.round(s.progress * (m.bytes || 0));
+    const phaseLabel = {
+      connecting: 'Connecting…', awaiting: 'Awaiting approval', transferring: 'Transferring', verifying: 'Verifying…', done: ''
+    }[s.phase] || '';
+    let phaseSub = '';
+    if (s.phase === 'connecting') phaseSub = 'TLS 1.3 · pinned identity';
+    else if (s.phase === 'awaiting') phaseSub = 'Waiting for ' + (m.peer || 'peer') + ' to accept';
+    else if (s.phase === 'transferring') phaseSub = m.kind === 'clipboard' ? 'Clipboard text' : (m.count || 1) + (m.count > 1 ? ' items' : ' item');
+    else if (s.phase === 'verifying') phaseSub = 'SHA-256 integrity check';
+
+    const isSend = s.direction === 'send';
+    const doneTitle = isSend ? 'Sent to ' + (m.peer || 'Pixel 8 Pro') : 'Saved to your Mac';
+    const doneSub = isSend
+      ? (m.count > 1 ? m.count + ' items · ' : '') + this.fmt(m.bytes || 0) + ' · verified'
+      : 'In ' + 'Downloads/SwiftShare';
+
+    // history view model
+    const tone = {
+      completed: { bg: 'var(--positive-50)', fg: 'var(--positive-500)', text: 'Completed' },
+      cancelled: { bg: 'var(--surface-sunken)', fg: 'var(--ink-500)', text: 'Cancelled' },
+      rejected: { bg: 'var(--warning-50)', fg: 'var(--warning-500)', text: 'Rejected' },
+      failed: { bg: 'var(--critical-50)', fg: 'var(--critical-500)', text: 'Failed' }
+    };
+    const historyVM = s.history.map(h => {
+      const sent = h.dir === 'send';
+      const t = tone[h.status] || tone.completed;
+      return {
+        sent, received: !sent,
+        title: (sent ? 'Sent ' : 'Received ') + h.what,
+        meta: h.peer + ' · ' + (h.bytes ? this.fmt(h.bytes) + ' · ' : '') + h.when,
+        iconBg: sent ? 'var(--accent-50)' : 'var(--info-50)',
+        iconFg: sent ? 'var(--accent-700)' : 'var(--info-500)',
+        statusBg: t.bg, statusFg: t.fg, statusText: t.text
+      };
+    });
+
+    const walls = {
+      Midnight: 'radial-gradient(115% 80% at 86% -12%, #4a352e 0%, rgba(74,53,46,0) 46%), radial-gradient(90% 70% at 12% 108%, #20303a 0%, rgba(32,48,58,0) 55%), linear-gradient(158deg, #1b1c21 0%, #2a2b32 58%, #161318 100%)',
+      Graphite: 'radial-gradient(100% 80% at 80% -10%, #3a3b42 0%, rgba(58,59,66,0) 50%), linear-gradient(160deg, #232429 0%, #303138 60%, #1b1c20 100%)',
+      Dune: 'radial-gradient(115% 80% at 86% -12%, #6b4a36 0%, rgba(107,74,54,0) 48%), radial-gradient(90% 70% at 10% 110%, #4a3526 0%, rgba(74,53,38,0) 55%), linear-gradient(158deg, #2a221b 0%, #3a2e23 58%, #1d1712 100%)'
+    };
+
+    return {
+      open: s.open,
+      wallBg: walls[this.props.wallpaper] || walls.Midnight,
+      iconBg: s.open ? 'rgba(255,255,255,.22)' : 'transparent',
+      vHome: v === 'home', vSend: v === 'send', vTransfer: v === 'transfer',
+      vReceive: v === 'receive', vPair: v === 'pair', vHistory: v === 'history', vSettings: v === 'settings',
+      showBack: v !== 'home',
+      title: titles[v] || '',
+      goHome: this.goHome, goHistory: this.goHistory, goSettings: this.goSettings, goPair: this.goPair, noop: this.noop,
+      toggleOpen: this.toggleOpen,
+
+      peers: peersVM,
+      onDrop: this.onDrop, sendClipboard: this.sendClipboard, triggerIncoming: this.triggerIncoming,
+
+      // send confirm
+      batchPeer: b ? b.peer : '',
+      batchItems,
+      batchCountLabel: b ? (b.items.length + (b.items.length > 1 ? ' items' : ' item')) : '',
+      batchTotalLabel: this.fmt(batchTotalBytes),
+      batchWarn: b ? !!b.warn : false,
+      confirmSend: this.confirmSend,
+
+      // transfer
+      transferPeer: m.peer || (b && b.peer) || 'Pixel 8 Pro',
+      arrowFlip: isSend ? 'none' : 'scaleX(-1)',
+      transferActive: s.phase !== 'done',
+      transferDone: s.phase === 'done',
+      showSpinner: s.phase === 'connecting' || s.phase === 'awaiting' || s.phase === 'verifying',
+      showBar: s.phase === 'transferring' || s.phase === 'verifying',
+      phaseLabel, phaseSub,
+      barWidth: pct + '%',
+      pctLabel: pct + '%',
+      bytesLabel: this.fmt(sentBytes) + ' of ' + this.fmt(m.bytes || 0),
+      cancelTransfer: this.cancelTransfer,
+      doneTitle, doneSub, doneReveal: !isSend,
+
+      // receive
+      incomingPeer: inc ? inc.peer : '',
+      incomingItems: incItems,
+      incomingCountLabel: inc ? (inc.items.length + ' items') : '',
+      incomingTotalLabel: inc ? this.fmt(this.total(inc.items)) : '',
+      acceptIncoming: this.acceptIncoming, declineIncoming: this.declineIncoming,
+      destination: 'Downloads/SwiftShare',
+
+      // pair
+      pairWaiting: s.pairPhase === 'waiting',
+      pairSuccess: s.pairPhase === 'success',
+      pairCountdown: s.pairCountdown,
+      fingerprint: '9F:2C:A4:1B:7E:08:D3:55',
+      qrSvg: this.buildQR(),
+      simulateScan: this.simulateScan,
+
+      // history
+      history: historyVM,
+
+      // settings
+      autoAcceptBg: s.autoAccept ? 'var(--accent-500)' : 'var(--ink-200)',
+      autoAcceptX: s.autoAccept ? '19.5px' : '2.5px',
+      launchBg: s.launch ? 'var(--accent-500)' : 'var(--ink-200)',
+      launchX: s.launch ? '19.5px' : '2.5px',
+      toggleAutoAccept: this.toggleAutoAccept, toggleLaunch: this.toggleLaunch
+    };
+  }
+}
+</script>
+</body>
+</html>

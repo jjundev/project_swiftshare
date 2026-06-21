@@ -1,0 +1,19 @@
+{
+  "protocolMajor": 1,
+  "protocolMinor": 0,
+  "sessionId": "00112233-4455-6677-8899-aabbccddeeff",
+  "host": "192.0.2.10",
+  "port": 8443,
+  "certificateSha256Hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "tokenHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+  "expiresAtEpochSeconds": 1893456000,
+  "limits": {
+    "qrBytes": 2048,
+    "frameBytes": 65536,
+    "tokenBytes": 32,
+    "failureBudget": 3,
+    "admissionSeconds": 60,
+    "confirmationSeconds": 120,
+    "recoverySeconds": 600
+  }
+}

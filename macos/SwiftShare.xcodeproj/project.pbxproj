@@ -1,0 +1,283 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ContractFoundation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* ContractFoundation.swift */; };
+		A10000000000000000000002 /* TransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* TransferSession.swift */; };
+		A10000000000000000000003 /* SwiftShareApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* SwiftShareApp.swift */; };
+		A10000000000000000000004 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* Localizable.xcstrings */; };
+		A10000000000000000000005 /* SwiftShareDomain.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SwiftShareDomain.framework */; };
+		A10000000000000000000006 /* FoundationContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* FoundationContractTests.swift */; };
+		A10000000000000000000007 /* TransferSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* TransferSessionTests.swift */; };
+		A10000000000000000000008 /* SwiftShareDomain.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SwiftShareDomain.framework */; };
+		A10000000000000000000009 /* foundation-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* foundation-v1.json */; };
+		A1000000000000000000000A /* SwiftShareDomain.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SwiftShareDomain.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A1000000000000000000000B /* TransferWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* TransferWire.swift */; };
+		A1000000000000000000000C /* TransferRoles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* TransferRoles.swift */; };
+		A1000000000000000000000D /* TransferWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* TransferWireTests.swift */; };
+		A1000000000000000000000E /* TransferRolesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* TransferRolesTests.swift */; };
+		A1000000000000000000000F /* transfer-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* transfer-v1.json */; };
+		A10000000000000000000010 /* MacFixedEndpointSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* MacFixedEndpointSender.swift */; };
+		A10000000000000000000011 /* Pairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* Pairing.swift */; };
+		A10000000000000000000012 /* PairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* PairingTests.swift */; };
+		A10000000000000000000013 /* pairing-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* pairing-v1.json */; };
+		A10000000000000000000014 /* PairingWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* PairingWire.swift */; };
+		A10000000000000000000015 /* MacPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* MacPairing.swift */; };
+		A10000000000000000000016 /* MacTrustRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* MacTrustRepository.swift */; };
+		A10000000000000000000017 /* Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* Discovery.swift */; };
+		A10000000000000000000018 /* MacLanDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* MacLanDiscovery.swift */; };
+		A10000000000000000000019 /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* DiscoveryTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C10000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000001;
+			remoteInfo = SwiftShareDomain;
+		};
+		C10000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000001;
+			remoteInfo = SwiftShareDomain;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D40000000000000000000001 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (A1000000000000000000000A /* SwiftShareDomain.framework in Embed Frameworks */,);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000001 /* ContractFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractFoundation.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* TransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferSession.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* SwiftShareApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftShareApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		B10000000000000000000005 /* FoundationContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationContractTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* TransferSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferSessionTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* foundation-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "foundation-v1.json"; path = "../contracts/fixtures/foundation-v1.json"; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000008 /* libSwiftShareDomain.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libSwiftShareDomain.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000009 /* SwiftShare.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftShare.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000000000000000000000A /* SwiftShareDomainTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftShareDomainTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000000000000000000000B /* TransferWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferWire.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* TransferRoles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferRoles.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* TransferWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferWireTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* TransferRolesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferRolesTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* SwiftShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SwiftShare.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000010 /* transfer-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "transfer-v1.json"; path = "../contracts/fixtures/transfer-v1.json"; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000011 /* MacFixedEndpointSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFixedEndpointSender.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* Pairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pairing.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* pairing-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pairing-v1.json"; path = "../contracts/fixtures/pairing-v1.json"; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000015 /* PairingWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingWire.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* MacPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPairing.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* MacTrustRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrustRepository.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* Discovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Discovery.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* MacLanDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLanDiscovery.swift; sourceTree = "<group>"; };
+		B1000000000000000000001A /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D10000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D10000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (A10000000000000000000005 /* SwiftShareDomain.framework in Frameworks */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (A10000000000000000000008 /* SwiftShareDomain.framework in Frameworks */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		G10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				G10000000000000000000002 /* SwiftShareDomain */,
+				G10000000000000000000003 /* SwiftShareApp */,
+				G10000000000000000000004 /* SwiftShareDomainTests */,
+				G10000000000000000000005 /* Shared Fixtures */,
+				G10000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		G10000000000000000000002 /* SwiftShareDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* ContractFoundation.swift */,
+				B10000000000000000000002 /* TransferSession.swift */,
+				B1000000000000000000000B /* TransferWire.swift */,
+				B1000000000000000000000C /* TransferRoles.swift */,
+				B10000000000000000000012 /* Pairing.swift */,
+				B10000000000000000000015 /* PairingWire.swift */,
+				B10000000000000000000018 /* Discovery.swift */,
+			);
+			path = SwiftShareDomain;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000003 /* SwiftShareApp */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000003 /* SwiftShareApp.swift */,
+				B10000000000000000000004 /* Localizable.xcstrings */,
+				B1000000000000000000000F /* SwiftShare.entitlements */,
+				B10000000000000000000011 /* MacFixedEndpointSender.swift */,
+				B10000000000000000000016 /* MacPairing.swift */,
+				B10000000000000000000017 /* MacTrustRepository.swift */,
+				B10000000000000000000019 /* MacLanDiscovery.swift */,
+			);
+			path = SwiftShareApp;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000004 /* SwiftShareDomainTests */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000005 /* FoundationContractTests.swift */,
+				B10000000000000000000006 /* TransferSessionTests.swift */,
+				B1000000000000000000000D /* TransferWireTests.swift */,
+				B1000000000000000000000E /* TransferRolesTests.swift */,
+				B10000000000000000000013 /* PairingTests.swift */,
+				B1000000000000000000001A /* DiscoveryTests.swift */,
+			);
+			path = SwiftShareDomainTests;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000005 /* Shared Fixtures */ = {
+			isa = PBXGroup;
+			children = (B10000000000000000000007 /* foundation-v1.json */, B10000000000000000000010 /* transfer-v1.json */, B10000000000000000000014 /* pairing-v1.json */,);
+			name = "Shared Fixtures";
+			sourceTree = "<group>";
+		};
+		G10000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000008 /* libSwiftShareDomain.a */,
+				B10000000000000000000009 /* SwiftShare.app */,
+				B1000000000000000000000A /* SwiftShareDomainTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		D10000000000000000000004 /* Headers */ = {isa = PBXHeadersBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		E10000000000000000000001 /* SwiftShareDomain */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J10000000000000000000002 /* Build configuration list for PBXNativeTarget "SwiftShareDomain" */;
+			buildPhases = (D10000000000000000000004 /* Headers */, D10000000000000000000001 /* Frameworks */, D20000000000000000000001 /* Sources */);
+			buildRules = ();
+			dependencies = ();
+			name = SwiftShareDomain;
+			productName = SwiftShareDomain;
+			productReference = B10000000000000000000008 /* libSwiftShareDomain.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+		E10000000000000000000002 /* SwiftShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J10000000000000000000003 /* Build configuration list for PBXNativeTarget "SwiftShare" */;
+			buildPhases = (D20000000000000000000002 /* Sources */, D10000000000000000000002 /* Frameworks */, D30000000000000000000001 /* Resources */);
+			buildRules = ();
+			dependencies = (H10000000000000000000001 /* PBXTargetDependency */,);
+			name = SwiftShare;
+			productName = SwiftShare;
+			productReference = B10000000000000000000009 /* SwiftShare.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E10000000000000000000003 /* SwiftShareDomainTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J10000000000000000000004 /* Build configuration list for PBXNativeTarget "SwiftShareDomainTests" */;
+			buildPhases = (D20000000000000000000003 /* Sources */, D10000000000000000000003 /* Frameworks */, D30000000000000000000002 /* Resources */);
+			buildRules = ();
+			dependencies = (H10000000000000000000002 /* PBXTargetDependency */,);
+			name = SwiftShareDomainTests;
+			productName = SwiftShareDomainTests;
+			productReference = B1000000000000000000000A /* SwiftShareDomainTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					E10000000000000000000001 = {CreatedOnToolsVersion = 26.5;};
+					E10000000000000000000002 = {CreatedOnToolsVersion = 26.5;};
+					E10000000000000000000003 = {CreatedOnToolsVersion = 26.5;};
+				};
+			};
+			buildConfigurationList = J10000000000000000000001 /* Build configuration list for PBXProject "SwiftShare" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = G10000000000000000000001;
+			productRefGroup = G10000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (E10000000000000000000001 /* SwiftShareDomain */, E10000000000000000000002 /* SwiftShare */, E10000000000000000000003 /* SwiftShareDomainTests */);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D30000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000004 /* Localizable.xcstrings in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D30000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000009 /* foundation-v1.json in Resources */, A1000000000000000000000F /* transfer-v1.json in Resources */, A10000000000000000000013 /* pairing-v1.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* ContractFoundation.swift in Sources */, A10000000000000000000002 /* TransferSession.swift in Sources */, A1000000000000000000000B /* TransferWire.swift in Sources */, A1000000000000000000000C /* TransferRoles.swift in Sources */, A10000000000000000000011 /* Pairing.swift in Sources */, A10000000000000000000014 /* PairingWire.swift in Sources */, A10000000000000000000017 /* Discovery.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003 /* SwiftShareApp.swift in Sources */, A10000000000000000000010 /* MacFixedEndpointSender.swift in Sources */, A10000000000000000000015 /* MacPairing.swift in Sources */, A10000000000000000000016 /* MacTrustRepository.swift in Sources */, A10000000000000000000018 /* MacLanDiscovery.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* FoundationContractTests.swift in Sources */, A10000000000000000000007 /* TransferSessionTests.swift in Sources */, A1000000000000000000000D /* TransferWireTests.swift in Sources */, A1000000000000000000000E /* TransferRolesTests.swift in Sources */, A10000000000000000000012 /* PairingTests.swift in Sources */, A10000000000000000000019 /* DiscoveryTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		H10000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E10000000000000000000001 /* SwiftShareDomain */; targetProxy = C10000000000000000000001 /* PBXContainerItemProxy */; };
+		H10000000000000000000002 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E10000000000000000000001 /* SwiftShareDomain */; targetProxy = C10000000000000000000002 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		K10000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Debug; };
+		K10000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 6.0;}; name = Release; };
+		K10000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; DEFINES_MODULE = YES; EXECUTABLE_PREFIX = lib; MACH_O_TYPE = staticlib; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0;}; name = Debug; };
+		K10000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; DEFINES_MODULE = YES; EXECUTABLE_PREFIX = lib; MACH_O_TYPE = staticlib; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0;}; name = Release; };
+		K10000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = SwiftShareApp/SwiftShare.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SwiftShareApp/Info.plist; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0;}; name = Debug; };
+		K10000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = SwiftShareApp/SwiftShare.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SwiftShareApp/Info.plist; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0;}; name = Release; };
+		K10000000000000000000007 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Debug; };
+		K10000000000000000000008 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		J10000000000000000000001 /* Build configuration list for PBXProject "SwiftShare" */ = {isa = XCConfigurationList; buildConfigurations = (K10000000000000000000001 /* Debug */, K10000000000000000000002 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		J10000000000000000000002 /* Build configuration list for PBXNativeTarget "SwiftShareDomain" */ = {isa = XCConfigurationList; buildConfigurations = (K10000000000000000000003 /* Debug */, K10000000000000000000004 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		J10000000000000000000003 /* Build configuration list for PBXNativeTarget "SwiftShare" */ = {isa = XCConfigurationList; buildConfigurations = (K10000000000000000000005 /* Debug */, K10000000000000000000006 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		J10000000000000000000004 /* Build configuration list for PBXNativeTarget "SwiftShareDomainTests" */ = {isa = XCConfigurationList; buildConfigurations = (K10000000000000000000007 /* Debug */, K10000000000000000000008 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = F10000000000000000000001 /* Project object */;
+}

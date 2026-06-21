@@ -1,0 +1,70 @@
+/* ============================================================
+   Aether — Base layer
+   Light-touch element defaults built on the tokens. Consumers get
+   sensible typography + box-sizing without a heavy reset.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  background: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'kern', 'liga', 'cv11';
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--ls-tight);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+p { margin: 0; text-wrap: pretty; }
+
+a { color: inherit; text-decoration: none; }
+
+button { font-family: inherit; }
+
+::selection { background: var(--accent-100); color: var(--ink-900); }
+
+:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+
+code, kbd, samp, pre { font-family: var(--font-mono); }
+
+/* ---- Shared utilities ---- */
+.ae-container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.ae-eyebrow {
+  font-size: var(--eyebrow-size);
+  font-weight: var(--eyebrow-weight);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+  color: var(--text-accent);
+}
+
+.ae-measure { max-width: var(--container-text); }
+
+.ae-display {
+  font-size: var(--fs-display-xl);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tighter);
+}
+
+.ae-mono { font-family: var(--font-mono); font-feature-settings: 'tnum'; }
