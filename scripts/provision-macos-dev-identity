@@ -1,0 +1,52 @@
+#!/bin/sh
+
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+APP_PATH=${1:-$ROOT/.build/xcode/Build/Products/Debug/SwiftShare.app}
+OUTPUT_DIR=$ROOT/.tools/dev-transfer
+COMMON_NAME="SwiftShare Mac Development"
+KEYCHAIN=$HOME/Library/Keychains/login.keychain-db
+
+if [ ! -d "$APP_PATH" ]; then
+  printf 'error: build the Mac app first or pass its .app path: %s\n' "$APP_PATH" >&2
+  exit 1
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/swiftshare-identity.XXXXXX")
+trap 'rm -rf "$work"' EXIT INT TERM
+
+password=$(openssl rand -hex 24)
+mkdir -p "$OUTPUT_DIR"
+
+security delete-identity -c "$COMMON_NAME" "$KEYCHAIN" >/dev/null 2>&1 || true
+openssl ecparam -name prime256v1 -genkey -noout -out "$work/mac-key.pem"
+openssl req -new -x509 -sha256 \
+  -key "$work/mac-key.pem" \
+  -subj "/CN=$COMMON_NAME" \
+  -days 30 \
+  -out "$work/mac-cert.pem"
+openssl pkcs12 -export \
+  -inkey "$work/mac-key.pem" \
+  -in "$work/mac-cert.pem" \
+  -name "$COMMON_NAME" \
+  -passout "pass:$password" \
+  -out "$work/mac-identity.p12"
+
+security import "$work/mac-identity.p12" \
+  -k "$KEYCHAIN" \
+  -f pkcs12 \
+  -x \
+  -P "$password" \
+  -T "$APP_PATH" >/dev/null
+
+openssl x509 -in "$work/mac-cert.pem" -outform DER -out "$OUTPUT_DIR/mac-certificate.der"
+openssl x509 -in "$work/mac-cert.pem" -pubkey -noout \
+  | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary \
+  | xxd -p -c 64 > "$OUTPUT_DIR/mac-spki-sha256.txt"
+
+printf 'ok: imported non-exportable identity "%s" into %s\n' "$COMMON_NAME" "$KEYCHAIN"
+printf 'ok: copy this Mac SPKI pin into the Android development screen:\n'
+sed -n '1p' "$OUTPUT_DIR/mac-spki-sha256.txt"
+printf 'note: rerun this command to rotate the 30-day development certificate.\n'

@@ -1,0 +1,56 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+.swiftpm/xcode/xcuserdata/
+
+# Xcode
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.dSYM
+*.dSYM.zip
+*.ipa
+
+# Android / Gradle
+.gradle/
+**/build/
+.kotlin/
+.cxx/
+.externalNativeBuild/
+captures/
+android/local.properties
+android/.idea/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Signing credentials
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
+
+# Local tools, generated development identities, and secrets
+.tools/
+.env
+.env.*
+!.env.example
+
+# Test and coverage output
+coverage/
+*.profraw
+*.profdata
+*.lcov
+

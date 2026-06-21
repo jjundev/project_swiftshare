@@ -1,0 +1,41 @@
+#!/bin/sh
+
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SCOPE=${1:-all}
+
+test_macos() {
+  "$ROOT/scripts/doctor" macos
+  "$ROOT/scripts/build" macos
+  swift test --package-path "$ROOT/macos" --scratch-path "$ROOT/.build/swiftpm"
+}
+
+test_android() {
+  "$ROOT/scripts/doctor" android
+  sdk=${SWIFTSHARE_ANDROID_SDK:-${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}}
+  java_home=${JAVA_HOME:-}
+  if [ -z "$java_home" ] && [ -x "$ROOT/.tools/jdk17/Contents/Home/bin/java" ]; then
+    java_home="$ROOT/.tools/jdk17/Contents/Home"
+  elif [ -z "$java_home" ] && [ -d "/Applications/Android Studio.app/Contents/jbr/Contents/Home" ]; then
+    java_home="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+  fi
+  (cd "$ROOT/android" && ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk" JAVA_HOME="$java_home" ./gradlew --no-daemon :domain:test :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin)
+}
+
+case "$SCOPE" in
+  all)
+    test_macos
+    test_android
+    ;;
+  macos)
+    test_macos
+    ;;
+  android)
+    test_android
+    ;;
+  *)
+    printf 'usage: %s [all|macos|android]\n' "$0" >&2
+    exit 2
+    ;;
+esac

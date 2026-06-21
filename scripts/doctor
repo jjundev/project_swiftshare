@@ -1,0 +1,113 @@
+#!/bin/sh
+
+set -u
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SCOPE=${1:-all}
+FAILED=0
+
+say_ok() {
+  printf 'ok: %s\n' "$1"
+}
+
+say_error() {
+  printf 'error: %s\n' "$1" >&2
+  FAILED=1
+}
+
+check_macos() {
+  if command -v xcodebuild >/dev/null 2>&1; then
+    say_ok "$(xcodebuild -version | tr '\n' ' ')"
+  else
+    say_error "Xcode command-line tools are unavailable. Install Xcode and select it with xcode-select."
+  fi
+
+  if command -v swift >/dev/null 2>&1; then
+    say_ok "$(swift --version 2>&1 | sed -n '1p')"
+  else
+    say_error "Swift is unavailable. Install Xcode before building the macOS client."
+  fi
+}
+
+find_java_home() {
+  if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/java" ]; then
+    printf '%s\n' "$JAVA_HOME"
+    return
+  fi
+
+  if [ -x "$ROOT/.tools/jdk17/Contents/Home/bin/java" ]; then
+    printf '%s\n' "$ROOT/.tools/jdk17/Contents/Home"
+    return
+  fi
+
+  if [ -x "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" ]; then
+    printf '%s\n' "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+    return
+  fi
+
+  if command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
+    java_home=$(/usr/libexec/java_home -v 17 2>/dev/null || true)
+    if [ -n "$java_home" ]; then
+      printf '%s\n' "$java_home"
+      return
+    fi
+  fi
+}
+
+android_sdk_path() {
+  if [ "${SWIFTSHARE_ANDROID_SDK+x}" = x ]; then
+    printf '%s\n' "$SWIFTSHARE_ANDROID_SDK"
+  elif [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+    printf '%s\n' "$ANDROID_SDK_ROOT"
+  elif [ -n "${ANDROID_HOME:-}" ]; then
+    printf '%s\n' "$ANDROID_HOME"
+  else
+    printf '%s\n' "$HOME/Library/Android/sdk"
+  fi
+}
+
+check_android() {
+  java_home=$(find_java_home)
+  if [ -n "$java_home" ]; then
+    java_version=$("$java_home/bin/java" -version 2>&1 | sed -n '1p')
+    java_major=$("$java_home/bin/java" -XshowSettings:properties -version 2>&1 | sed -n 's/^[[:space:]]*java.version = \([0-9][0-9]*\).*/\1/p' | sed -n '1p')
+    if [ "$java_major" = 17 ]; then
+      say_ok "JDK 17 at $java_home ($java_version)"
+    else
+      say_error "JDK at $java_home is version ${java_major:-unknown}; SwiftShare requires JDK 17. Set JAVA_HOME to JDK 17."
+    fi
+  else
+    say_error "JDK 17 or newer is unavailable. Install Android Studio or set JAVA_HOME to a compatible JDK."
+  fi
+
+  sdk=$(android_sdk_path)
+  if [ ! -d "$sdk" ]; then
+    say_error "Android SDK is unavailable at $sdk. Install Android Studio SDK API 36.1, or set SWIFTSHARE_ANDROID_SDK."
+    return
+  fi
+
+  say_ok "Android SDK at $sdk"
+
+  if ! find "$sdk/platforms" -maxdepth 1 -type d \( -name 'android-36*' -o -name 'android-37*' \) 2>/dev/null | grep -q .; then
+    say_error "Android SDK API 36.1 or newer is missing from $sdk/platforms."
+  fi
+}
+
+case "$SCOPE" in
+  all)
+    check_macos
+    check_android
+    ;;
+  macos)
+    check_macos
+    ;;
+  android)
+    check_android
+    ;;
+  *)
+    printf 'usage: %s [all|macos|android]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
+exit "$FAILED"

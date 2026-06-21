@@ -1,0 +1,78 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · key %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · key %2$@"
+          }
+        }
+      }
+    },
+    "%@ of %@ verified" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@ verified"
+          }
+        }
+      }
+    },
+    "%@%%" : {
+
+    },
+    "Android destination: Downloads/SwiftShare" : {
+
+    },
+    "Confirm %@" : {
+
+    },
+    "Install SwiftShare on both your Mac and Android device." : {
+      "extractionState" : "manual"
+    },
+    "LAN Mode · Mac → Android" : {
+
+    },
+    "Mac SPKI pin" : {
+
+    },
+    "No file selected" : {
+
+    },
+    "Pairing failed: %@" : {
+
+    },
+    "Quit SwiftShare" : {
+      "extractionState" : "manual"
+    },
+    "Scan Android endpoint QR" : {
+
+    },
+    "Scan with SwiftShare on Android · expires %@" : {
+
+    },
+    "SwiftShare" : {
+      "extractionState" : "manual"
+    },
+    "SwiftShare transfers directly over your local network. It does not use an account, cloud service, Quick Share, or AirDrop." : {
+      "extractionState" : "manual"
+    },
+    "The QR locates the Peer; pinned authentication and approval are still required." : {
+
+    }
+  },
+  "version" : "1.0"
+}

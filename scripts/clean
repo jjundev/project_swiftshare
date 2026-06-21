@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+rm -rf "$ROOT/.build"
+
+if [ -x "$ROOT/android/gradlew" ]; then
+  "$ROOT/android/gradlew" -p "$ROOT/android" --no-daemon clean || true
+fi
+

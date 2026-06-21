@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package swiftshare.transfer.bootstrap;
+
+option java_package = "dev.swiftshare.contract.transfer.bootstrap";
+option java_multiple_files = true;
+option swift_prefix = "SSB";
+
+message VersionRange {
+  uint32 major = 1;
+  uint32 minimum_minor = 2;
+  uint32 maximum_minor = 3;
+}
+
+message CapabilityOffer {
+  string name = 1;
+  repeated VersionRange supported_versions = 2;
+  repeated VersionRange required_versions = 3;
+}
+
+message SessionOffer {
+  repeated VersionRange versions = 1;
+  repeated CapabilityOffer capabilities = 2;
+  uint32 minimum_chunk_size = 3;
+  uint32 maximum_chunk_size = 4;
+}
+
+message SessionHello {
+  SessionOffer offer = 1;
+  // Present only for a user-scanned endpoint QR. It correlates the authenticated
+  // connection with the short-lived endpoint ticket; it never authorizes a Peer.
+  bytes endpoint_ticket = 2;
+}
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message NegotiatedParameters {
+  ProtocolVersion version = 1;
+  repeated string capabilities = 2;
+  uint32 chunk_size = 3;
+}
+
+enum RejectionCategory {
+  REJECTION_CATEGORY_UNSPECIFIED = 0;
+  REJECTION_CATEGORY_INCOMPATIBLE_VERSION = 1;
+  REJECTION_CATEGORY_CAPABILITY = 2;
+  REJECTION_CATEGORY_BUSY = 3;
+  REJECTION_CATEGORY_PROTOCOL = 4;
+  REJECTION_CATEGORY_AUTHENTICATION = 5;
+}
+
+message SessionDecision {
+  bool accepted = 1;
+  SessionOffer receiver_offer = 2;
+  NegotiatedParameters negotiated = 3;
+  RejectionCategory rejection_category = 4;
+  string rejection_code = 5;
+}
