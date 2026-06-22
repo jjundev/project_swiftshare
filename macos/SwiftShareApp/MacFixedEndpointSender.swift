@@ -15,10 +15,6 @@ struct PreparedMacFile: Sendable {
     let modificationDate: Date?
 }
 
-struct MacTransferCompletion: Sendable {
-    let artifactID: String
-}
-
 enum MacTransferError: LocalizedError {
     case invalidFile(String)
     case identityUnavailable
@@ -31,7 +27,6 @@ enum MacTransferError: LocalizedError {
     case incompatibleVersion
     case protocolFailure(String)
     case sourceChanged
-    case timeout(String)
 
     var errorDescription: String? {
         switch self {
@@ -46,8 +41,24 @@ enum MacTransferError: LocalizedError {
         case .incompatibleVersion: "SwiftShare versions are incompatible. Update SwiftShare on both devices."
         case .protocolFailure(let value): "Protocol error: \(value)"
         case .sourceChanged: "The selected file changed after review. Select it again."
-        case .timeout(let phase): "Timed out while \(phase)."
         }
+    }
+
+    static func message(for failure: TransferFailure) -> String {
+        let error: MacTransferError = switch failure.category {
+        case .discovery: .peerUnavailable
+        case .authentication where failure.code == "identity_unavailable": .identityUnavailable
+        case .authentication: .remoteFailure(failure.code)
+        case .approval: .rejected(failure.code)
+        case .permission, .storage, .integrity: .remoteFailure(failure.code)
+        case .network: .connection(failure.code)
+        case .protocol: .protocolFailure(failure.code)
+        case .source: .sourceChanged
+        case .busy: .busy
+        case .incompatibleVersion: .incompatibleVersion
+        case .cancelled: .remoteFailure(failure.code)
+        }
+        return error.localizedDescription
     }
 }
 
@@ -316,9 +327,8 @@ final class NWTLSRecordChannel: @unchecked Sendable {
 
 final class MacFixedEndpointSender: @unchecked Sendable {
     private let identityStore = MacDevelopmentIdentityStore()
-    private let activeLock = NSLock()
-    private var activePair: (channel: NWTLSRecordChannel, sessionID: UUID, version: NegotiatedProtocolVersion?, peerID: String)?
-    private var scheduler: TransferSessionScheduler?
+    private let sessionLock = NSLock()
+    private var outboundSession: OutboundTransferSession?
 
     func localSPKIPin() throws -> String {
         try identityStore.spkiPin(for: identityStore.loadIdentity()).hexString
@@ -354,301 +364,130 @@ final class MacFixedEndpointSender: @unchecked Sendable {
 
     func send(
         _ file: PreparedMacFile,
-        host: String,
-        port: UInt16 = 8443,
-        androidSPKIPinHex: String,
-        connectedChannel: NWTLSRecordChannel? = nil,
-        endpointTicket: Data? = nil,
-        connectionResolver: (@Sendable () async throws -> MacConnectedPeer)? = nil,
+        peerID: String,
+        endpointQR: String?,
         event: @escaping @Sendable (TransferSessionEvent) async -> Void
-    ) async throws -> MacTransferCompletion {
-        let pin = try androidSPKIPinHex.transferHexData
-        guard pin.count == 32 else { throw MacTransferError.invalidPin }
-        let identity = try identityStore.loadIdentity()
-        let localDeviceID = try identityStore.spkiPin(for: identity)
-        let scheduler = activeLock.withLock {
-            if let scheduler = self.scheduler { return scheduler }
-            let value = TransferSessionScheduler(localDeviceID: localDeviceID)
-            self.scheduler = value
+    ) async -> RoleTransferOutcome {
+        do {
+            let pin = try peerID.transferHexData
+            guard pin.count == 32 else { throw MacTransferError.invalidPin }
+            let session = try session()
+            return await session.execute(
+                OutboundTransferIntent(peerID: pin, endpointHint: endpointQR, payload: file),
+                events: MacTransferEventSink(handler: event)
+            )
+        } catch {
+            await event(TransferSessionEvent(phase: .failed, totalBytes: file.byteCount))
+            let failure: TransferFailure
+            switch error as? MacTransferError {
+            case .invalidPin:
+                failure = TransferFailure(category: .authentication, code: "invalid_peer_identity")
+            case .identityUnavailable:
+                failure = TransferFailure(category: .authentication, code: "identity_unavailable")
+            default:
+                failure = TransferFailure(category: .protocol, code: "session_initialization_failed")
+            }
+            return RoleTransferOutcome(
+                result: .failed,
+                failure: failure
+            )
+        }
+    }
+
+    func cancelActive(reasonCode: String, peerID: String? = nil) {
+        let session = sessionLock.withLock { outboundSession }
+        let pin = peerID.flatMap { try? $0.transferHexData }
+        Task {
+            await session?.cancel(reasonCode: reasonCode, peerID: pin)
+        }
+    }
+
+    private func session() throws -> OutboundTransferSession {
+        try sessionLock.withLock {
+            if let outboundSession { return outboundSession }
+            let identity = try identityStore.loadIdentity()
+            let localDeviceID = try identityStore.spkiPin(for: identity)
+            let value = OutboundTransferSession(
+                scheduler: TransferSessionScheduler(localDeviceID: localDeviceID),
+                locator: MacOutboundPeerLocator()
+            )
+            outboundSession = value
             return value
         }
-        let sessionID = UUID()
-        guard let lease = await scheduler.reserveOutbound(peerID: pin, sessionID: sessionID) else {
-            throw MacTransferError.busy
-        }
-        do {
-            let resolved: MacConnectedPeer?
-            if let connectionResolver {
-                do {
-                    resolved = try await withTransferTimeout(.seconds(5), phase: "locating the Android receiver") {
-                        try await connectionResolver()
-                    }
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    throw MacTransferError.peerUnavailable
-                }
-            } else {
-                resolved = nil
-            }
-            let channel = try resolved?.channel ?? connectedChannel ?? NWTLSRecordChannel(host: host, port: port, identity: identity, peerSPKIPin: pin)
-            let effectiveTicket = resolved?.endpointTicket ?? endpointTicket
-            activeLock.withLock { activePair = (channel, sessionID, nil, androidSPKIPinHex) }
-            let completion = try await withTaskCancellationHandler {
-            let access = file.url.startAccessingSecurityScopedResource()
-            defer {
-                if access { file.url.stopAccessingSecurityScopedResource() }
-                channel.cancel()
-                activeLock.withLock { activePair = nil }
-            }
-            try validate(file)
-            await event(file.event(.connecting))
-            if connectedChannel == nil && resolved == nil {
-                try await withTransferTimeout(.seconds(15), phase: "connecting") {
-                    try await channel.connect()
-                }
-            }
-            let hello = SessionHello(offer: .default, endpointTicket: effectiveTicket)
-            try await withTransferTimeout(.seconds(10), phase: "sending session capabilities") {
-                try await channel.sendRecord(
-                    type: .sessionHello,
-                    payload: SessionBootstrapCodec.encode(hello),
-                    sessionID: sessionID,
-                    protocolMajor: 0,
-                    protocolMinor: 0
-                )
-            }
-            let decisionRecord = try await withTransferTimeout(.seconds(10), phase: "negotiating session capabilities") {
-                try await channel.receiveRecord()
-            }
-            guard decisionRecord.header.sessionID == sessionID,
-                  decisionRecord.header.type == .sessionDecision,
-                  decisionRecord.header.protocolMajor == 0,
-                  decisionRecord.header.protocolMinor == 0
-            else { throw MacTransferError.protocolFailure("session decision required") }
-            let decision = try SessionBootstrapCodec.decodeDecision(decisionRecord.payload)
-            guard decision.accepted else {
-                switch decision.rejectionCategory {
-                case .busy: throw MacTransferError.busy
-                case .incompatibleVersion, .capability:
-                    throw MacTransferError.incompatibleVersion
-                default: throw MacTransferError.remoteFailure(decision.rejectionCode)
-                }
-            }
-            let negotiated = try SessionNegotiator.validate(hello: hello, decision: decision)
-            guard await scheduler.markOutboundAccepted(token: lease.token) else {
-                throw MacTransferError.busy
-            }
-            activeLock.withLock { activePair = (channel, sessionID, negotiated.version, androidSPKIPinHex) }
-            let manifest = TransferControlMessage.manifest([
-                TransferFileEntry(
-                    itemID: file.itemID,
-                    displayName: file.displayName,
-                    byteCount: file.byteCount,
-                    sha256: file.sha256,
-                    mediaType: "application/octet-stream",
-                    chunkSize: UInt32(negotiated.chunkSize)
-                )
-            ])
-            try await channel.sendRecord(
-                type: .manifest,
-                payload: TransferControlCodec.encode(manifest),
-                sessionID: sessionID,
-                protocolMajor: negotiated.version.major,
-                protocolMinor: negotiated.version.minor
-            )
-            await event(file.event(.awaitingApproval))
-            let approvalRecord = try await withTransferTimeout(.seconds(120), phase: "waiting for approval") {
-                try await channel.receiveRecord()
-            }
-            if approvalRecord.header.type == .terminalResult {
-                try throwTerminal(approvalRecord)
-            }
-            try requireSession(approvalRecord, sessionID: sessionID, type: .approval, version: negotiated.version)
-            guard case .approval(let accepted, _) = try TransferControlCodec.decode(
-                type: .approval,
-                data: approvalRecord.payload
-            ), accepted else {
-                throw MacTransferError.rejected(
-                    (try? TransferControlCodec.decode(type: .approval, data: approvalRecord.payload).approvalReason) ?? ""
-                )
-            }
+    }
+}
 
-            try validate(file)
-            let handle = try FileHandle(forReadingFrom: file.url)
-            defer { try? handle.close() }
-            var offset: UInt64 = 0
-            var chunkIndex: UInt32 = 0
-            while let bytes = try handle.read(upToCount: negotiated.chunkSize), !bytes.isEmpty {
-                try Task.checkCancellation()
-                let digest = Data(SHA256.hash(data: bytes))
-                let prelude = TransferChunkPrelude(
-                    itemID: file.itemID,
-                    chunkIndex: chunkIndex,
-                    offset: offset,
-                    dataLength: UInt32(bytes.count),
-                    sha256: digest
-                )
-                try await channel.sendRecord(
-                    type: .chunk,
-                    payload: prelude.encoded() + bytes,
-                    sessionID: sessionID,
-                    protocolMajor: negotiated.version.major,
-                    protocolMinor: negotiated.version.minor
-                )
-                let progressRecord = try await withTransferTimeout(.seconds(60), phase: "waiting for verified progress") {
-                    try await channel.receiveRecord()
-                }
-                if progressRecord.header.type == .terminalResult {
-                    try throwTerminal(progressRecord)
-                }
-                try requireSession(progressRecord, sessionID: sessionID, type: .progress, version: negotiated.version)
-                guard case .progress(let itemID, let verified, _, _) = try TransferControlCodec.decode(
-                    type: .progress,
-                    data: progressRecord.payload
-                ), itemID == file.itemID else {
-                    throw MacTransferError.protocolFailure("invalid progress acknowledgement")
-                }
-                offset += UInt64(bytes.count)
-                chunkIndex += 1
-                guard verified == offset else {
-                    throw MacTransferError.protocolFailure("non-cumulative progress acknowledgement")
-                }
-                await event(file.event(.transferring, transferred: offset, verified: verified))
-            }
-            guard offset == file.byteCount else { throw MacTransferError.sourceChanged }
-            try await channel.sendRecord(
-                type: .senderFinished,
-                payload: TransferControlCodec.encode(
-                    .senderFinished(itemID: file.itemID, byteCount: file.byteCount, sha256: file.sha256)
-                ),
-                sessionID: sessionID,
-                protocolMajor: negotiated.version.major,
-                protocolMinor: negotiated.version.minor
-            )
-            await event(file.event(.verifying, transferred: offset, verified: offset))
-            while true {
-                let record = try await withTransferTimeout(.seconds(60), phase: "waiting for the terminal result") {
-                    try await channel.receiveRecord()
-                }
-                guard record.header.sessionID == sessionID,
-                      record.header.protocolMajor == negotiated.version.major,
-                      record.header.protocolMinor == negotiated.version.minor else {
-                    throw MacTransferError.protocolFailure("session ID mismatch")
-                }
-                if record.header.type == .cancel { throw CancellationError() }
-                guard record.header.type == .terminalResult else { continue }
-                guard case .terminalResult(let status, _, let code, let artifact) = try TransferControlCodec.decode(
-                    type: .terminalResult,
-                    data: record.payload
-                ) else { throw MacTransferError.protocolFailure("invalid terminal result") }
-                switch status {
-                case .completed:
-                    await event(file.event(.completed, transferred: offset, verified: offset))
-                    return MacTransferCompletion(artifactID: artifact)
-                case .rejected:
-                    throw MacTransferError.rejected(code)
-                case .cancelled:
-                    throw CancellationError()
-                case .failed:
-                    throw MacTransferError.remoteFailure(code)
-                }
-            }
-            } onCancel: {
-                channel.cancel()
-            }
-            await scheduler.release(token: lease.token)
-            return completion
+private struct MacTransferEventSink: TransferEventSink {
+    let handler: @Sendable (TransferSessionEvent) async -> Void
+    func emit(_ event: TransferSessionEvent) async { await handler(event) }
+}
+
+private actor MacOutboundPeerLocator: OutboundAuthenticatedPeerLocating {
+    private var location: AuthenticatedPeerLocationModule?
+
+    func locate(peerID: Data, endpointHint: String?) async throws -> OutboundAuthenticatedPeerLocation {
+        let module: AuthenticatedPeerLocationModule
+        if let location {
+            module = location
+        } else {
+            let adapter = await MainActor.run { MacPeerConnectionModule.shared }
+            let value = AuthenticatedPeerLocationModule(routes: adapter, authenticator: adapter)
+            location = value
+            module = value
+        }
+        return try await module.locate(peerID: peerID, endpointHint: endpointHint)
+    }
+}
+
+extension NWTLSRecordChannel: OutboundTransferRecordChannel {
+    func close() async { cancel() }
+}
+
+extension PreparedMacFile: OutboundTransferPayload {
+    var mediaType: String { "application/octet-stream" }
+
+    func validateForTransfer() async throws {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [
+            .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey,
+        ])
+        guard values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              values.fileSize.map(UInt64.init) == byteCount,
+              values.contentModificationDate == modificationDate
+        else { throw MacTransferError.sourceChanged }
+    }
+
+    func openStream() async throws -> any OutboundTransferPayloadStream {
+        try MacFilePayloadStream(url: url)
+    }
+}
+
+private actor MacFilePayloadStream: OutboundTransferPayloadStream {
+    private let url: URL
+    private let handle: FileHandle
+    private let securityScope: Bool
+    private var closed = false
+
+    init(url: URL) throws {
+        self.url = url
+        securityScope = url.startAccessingSecurityScopedResource()
+        do {
+            handle = try FileHandle(forReadingFrom: url)
         } catch {
-            await scheduler.release(token: lease.token)
+            if securityScope { url.stopAccessingSecurityScopedResource() }
             throw error
         }
     }
 
-    func send(
-        _ file: PreparedMacFile,
-        connection: MacConnectedPeer,
-        event: @escaping @Sendable (TransferSessionEvent) async -> Void
-    ) async throws -> MacTransferCompletion {
-        try await send(
-            file,
-            host: "",
-            androidSPKIPinHex: connection.peerID,
-            connectedChannel: connection.channel,
-            endpointTicket: connection.endpointTicket,
-            event: event
-        )
-    }
+    func read(upToCount count: Int) throws -> Data? { try handle.read(upToCount: count) }
 
-    func send(
-        _ file: PreparedMacFile,
-        peerID: String,
-        endpointQR: String?,
-        event: @escaping @Sendable (TransferSessionEvent) async -> Void
-    ) async throws -> MacTransferCompletion {
-        try await send(
-            file,
-            host: "",
-            androidSPKIPinHex: peerID,
-            connectionResolver: {
-                try await MacPeerConnectionModule.shared.connect(peerID: peerID, endpointQR: endpointQR)
-            },
-            event: event
-        )
-    }
-
-    func unpairActive(peerID: String? = nil) {
-        guard let active = activeLock.withLock({ activePair }) else { return }
-        if let peerID, active.peerID != peerID { return }
-        Task.detached {
-            if let version = active.version {
-                try? await active.channel.sendRecord(
-                    type: .cancel,
-                    payload: TransferControlCodec.encode(.cancel(reasonCode: "peer_unpaired")),
-                    sessionID: active.sessionID,
-                    protocolMajor: version.major,
-                    protocolMinor: version.minor
-                )
-            }
-            active.channel.cancel()
-        }
-    }
-
-    private func validate(_ file: PreparedMacFile) throws {
-        let values = try file.url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
-        guard values.isRegularFile == true,
-              values.isSymbolicLink != true,
-              values.fileSize.map(UInt64.init) == file.byteCount,
-              values.contentModificationDate == file.modificationDate
-        else { throw MacTransferError.sourceChanged }
-    }
-
-    private func requireSession(
-        _ record: TransferWireRecord,
-        sessionID: UUID,
-        type: TransferRecordType,
-        version: NegotiatedProtocolVersion
-    ) throws {
-        guard record.header.sessionID == sessionID,
-              record.header.type == type,
-              record.header.protocolMajor == version.major,
-              record.header.protocolMinor == version.minor else {
-            throw MacTransferError.protocolFailure("unexpected \(record.header.type) record")
-        }
-    }
-
-    private func throwTerminal(_ record: TransferWireRecord) throws -> Never {
-        guard case .terminalResult(let status, _, let code, _) = try TransferControlCodec.decode(
-            type: .terminalResult,
-            data: record.payload
-        ) else { throw MacTransferError.protocolFailure("invalid early terminal result") }
-        switch status {
-        case .completed: throw MacTransferError.protocolFailure("completion before Commit")
-        case .rejected: throw MacTransferError.rejected(code)
-        case .cancelled where code == "peer_unpaired": throw MacTransferError.remoteFailure("peer_unpaired")
-        case .cancelled: throw CancellationError()
-        case .failed: throw MacTransferError.remoteFailure(code)
-        }
+    func close() {
+        guard !closed else { return }
+        closed = true
+        try? handle.close()
+        if securityScope { url.stopAccessingSecurityScopedResource() }
     }
 }
 
@@ -712,30 +551,37 @@ final class MacTransferModel: ObservableObject {
         errorMessage = nil
         task = Task {
             defer { task = nil }
-            do {
-                _ = try await sender.send(file, peerID: peerID, endpointQR: endpointQR.isEmpty ? nil : endpointQR) { [weak self] event in
-                    await MainActor.run {
-                        self?.phase = event.phase
-                        self?.verifiedBytes = event.verifiedBytes
-                        self?.statusMessage = event.phase.userLabel
-                    }
+            let outcome = await sender.send(
+                file,
+                peerID: peerID,
+                endpointQR: endpointQR.isEmpty ? nil : endpointQR
+            ) { [weak self] event in
+                await MainActor.run {
+                    self?.phase = event.phase
+                    self?.verifiedBytes = event.verifiedBytes
+                    self?.statusMessage = event.phase.userLabel
                 }
-            } catch is CancellationError {
+            }
+            switch outcome.result {
+            case .completed:
+                break
+            case .cancelled:
                 phase = .cancelled
                 statusMessage = "Cancelled"
-            } catch {
-                phase = .failed
-                errorMessage = error.localizedDescription
-                statusMessage = "Transfer failed"
+            case .rejected, .failed:
+                errorMessage = outcome.failure.map(MacTransferError.message(for:)) ?? "Transfer failed"
             }
         }
     }
 
-    func cancel() { task?.cancel() }
-    func unpairActive() { sender.unpairActive() }
+    func cancel() {
+        if phase == .preparing { task?.cancel() }
+        else { sender.cancelActive(reasonCode: "user_cancelled") }
+    }
+    func unpairActive() { sender.cancelActive(reasonCode: "peer_unpaired") }
     func unpair(peerID: String) {
         connections.invalidate(peerID: peerID)
-        sender.unpairActive(peerID: peerID)
+        sender.cancelActive(reasonCode: "peer_unpaired", peerID: peerID)
         if selectedPeerID == peerID { selectedPeerID = nil; selectedPeerName = nil; endpointQR = "" }
     }
 }
@@ -758,49 +604,6 @@ private final class ContinuationGate<Value: Sendable>: @unchecked Sendable {
             continuation?.resume(throwing: error)
             continuation = nil
         }
-    }
-}
-
-private func withTransferTimeout<T: Sendable>(
-    _ duration: Duration,
-    phase: String,
-    operation: @escaping @Sendable () async throws -> T
-) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask(operation: operation)
-        group.addTask {
-            try await Task.sleep(for: duration)
-            throw MacTransferError.timeout(phase)
-        }
-        guard let result = try await group.next() else {
-            throw MacTransferError.timeout(phase)
-        }
-        group.cancelAll()
-        return result
-    }
-}
-
-private extension PreparedMacFile {
-    func event(
-        _ phase: TransferActivityPhase,
-        transferred: UInt64 = 0,
-        verified: UInt64 = 0
-    ) -> TransferSessionEvent {
-        TransferSessionEvent(
-            phase: phase,
-            transferredBytes: transferred,
-            verifiedBytes: verified,
-            totalBytes: byteCount,
-            completedItems: phase == .completed ? 1 : 0,
-            totalItems: 1
-        )
-    }
-}
-
-private extension TransferControlMessage {
-    var approvalReason: String {
-        if case .approval(_, let reason) = self { return reason }
-        return ""
     }
 }
 

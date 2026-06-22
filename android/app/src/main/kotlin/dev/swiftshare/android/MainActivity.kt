@@ -89,17 +89,22 @@ class MainActivity : ComponentActivity() {
             startupIdentityStore, trustRepository,
             AndroidPairingListener { state -> runOnUiThread {
                 pairingState = state
-                if (state is AndroidPairingState.Paired) { peerRevision++; runtime.reconcile() }
+                if (state is AndroidPairingState.Paired) {
+                    peerRevision++
+                    runtime.accept(ReceiveAvailabilityInput.PairedPeersChanged)
+                }
             } },
         )
         localPin = runCatching {
             AndroidDevelopmentIdentityStore().loadOrCreate().spkiSha256.toHex()
         }.getOrElse {
-            runtime.block("identity_unavailable")
+            runtime.accept(ReceiveAvailabilityInput.Blocked("identity_unavailable"))
             "unavailable"
         }
         notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) enableReceiveMode() else runtime.block("notification_permission_denied")
+            if (granted) enableReceiveMode() else {
+                runtime.accept(ReceiveAvailabilityInput.Blocked("notification_permission_denied"))
+            }
         }
         setContent {
             SwiftShareTheme {
@@ -111,7 +116,7 @@ class MainActivity : ComponentActivity() {
                     endpointQr = endpointQr,
                     onAvailableWhileOpen = ::useAvailableWhileOpen,
                     onReceiveMode = ::requestReceiveMode,
-                    onStop = { runtime.stop() },
+                    onStop = ::stopReceiving,
                     onApprove = runtime::approve,
                     onReject = runtime::reject,
                     onCancel = runtime::cancelActive,
@@ -122,13 +127,15 @@ class MainActivity : ComponentActivity() {
                     onPairReject = { pairingClient?.reject() },
                     onUnpair = { peerId ->
                         if (runCatching { trustRepository.remove(peerId) }.getOrDefault(false)) {
-                            runtime.unpairActive(peerId); peerRevision++; runtime.reconcile()
+                            runtime.unpairActive(peerId)
+                            peerRevision++
+                            runtime.accept(ReceiveAvailabilityInput.PairedPeersChanged)
                         }
                     },
                     onApprovalPolicy = { peerId, policy ->
                         runCatching { trustRepository.setApprovalPolicy(peerId, policy) }
                             .onSuccess { peerRevision++ }
-                            .onFailure { runtime.block("peer_storage_error") }
+                            .onFailure { runtime.accept(ReceiveAvailabilityInput.Blocked("peer_storage_error")) }
                     },
                 )
             }
@@ -137,11 +144,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        runtime.enterForeground()
+        runtime.accept(ReceiveAvailabilityInput.AppVisibility(foreground = true))
     }
 
     override fun onStop() {
-        if (!isChangingConfigurations) runtime.leaveForeground()
+        if (!isChangingConfigurations) {
+            runtime.accept(ReceiveAvailabilityInput.AppVisibility(foreground = false))
+        }
         super.onStop()
     }
 
@@ -152,7 +161,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun useAvailableWhileOpen() {
-        runtime.setPolicy(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN)
+        runtime.accept(
+            ReceiveAvailabilityInput.SelectPolicy(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN),
+        )
         stopService(Intent(this, ReceiveModeService::class.java))
     }
 
@@ -162,15 +173,20 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-            runtime.block("notifications_disabled")
+            runtime.accept(ReceiveAvailabilityInput.Blocked("notifications_disabled"))
             return
         }
         enableReceiveMode()
     }
 
     private fun enableReceiveMode() {
-        runtime.setPolicy(AndroidAvailabilityPolicy.RECEIVE_MODE, startImmediately = false)
+        runtime.accept(ReceiveAvailabilityInput.SelectPolicy(AndroidAvailabilityPolicy.RECEIVE_MODE))
         ReceiveModeService.start(this)
+    }
+
+    private fun stopReceiving() {
+        runtime.accept(ReceiveAvailabilityInput.StopRequested)
+        stopService(Intent(this, ReceiveModeService::class.java))
     }
 }
 

@@ -8,14 +8,8 @@ import Security
 import SwiftUI
 import SwiftShareDomain
 
-struct MacConnectedPeer: @unchecked Sendable {
-    let peerID: String
-    let channel: NWTLSRecordChannel
-    let endpointTicket: Data?
-}
-
 @MainActor
-final class MacPeerConnectionModule: ObservableObject {
+final class MacPeerConnectionModule: ObservableObject, AuthenticatedPeerRouteProviding, AuthenticatedPeerRouteAuthenticating {
     static let shared = MacPeerConnectionModule()
 
     @Published private(set) var onlinePeerIDs: Set<String> = []
@@ -28,65 +22,69 @@ final class MacPeerConnectionModule: ObservableObject {
     private var browser: NWBrowser?
     private var routesByPeer: [String: [String: Route]] = [:]
     private var peerByRoute: [String: String] = [:]
+    private var endpointByCandidateID: [String: NWEndpoint] = [:]
 
     private init() { startBrowsing() }
 
-    func connect(peerID: String, endpointQR: String?) async throws -> MacConnectedPeer {
-        let peer = try await repository.peer(id: peerID)
+    func routes(peerID: Data, endpointHint: String?) async throws -> [AuthenticatedPeerRoute] {
+        let peerKey = peerID.hexString
+        let peer = try await repository.peer(id: peerKey)
         guard let peer else { throw MacTransferError.remoteFailure("peer_unpaired") }
-        let endpoints: [NWEndpoint]
-        let ticket: Data?
-        if let endpointQR, !endpointQR.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let decoded = try EndpointQRCodec.decodeURI(endpointQR.trimmingCharacters(in: .whitespacesAndNewlines))
-            guard decoded.0.peerKeyID.hexString == peerID else { throw MacTransferError.remoteFailure("endpoint_qr_peer_mismatch") }
+        if let endpointHint, !endpointHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let decoded = try EndpointQRCodec.decodeURI(endpointHint.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard decoded.0.peerKeyID == peerID else { throw MacTransferError.remoteFailure("endpoint_qr_peer_mismatch") }
             let key = try P256.Signing.PublicKey(derRepresentation: peer.canonicalSPKI)
             let signature = try P256.Signing.ECDSASignature(rawRepresentation: decoded.1.signatureP1363)
             guard key.isValidSignature(signature, for: EndpointQRCodec.signingDigest(bodyBytes: decoded.1.bodyBytes)) else {
                 throw MacTransferError.remoteFailure("endpoint_qr_signature_invalid")
             }
-            endpoints = decoded.0.addresses.compactMap { address in
+            return decoded.0.addresses.enumerated().compactMap { index, address in
+                let endpoint: NWEndpoint
                 switch address.family {
                 case .ipv4:
                     guard let value = IPv4Address(address.bytes) else { return nil }
-                    return .hostPort(host: .ipv4(value), port: .init(rawValue: decoded.0.port)!)
+                    endpoint = .hostPort(host: .ipv4(value), port: .init(rawValue: decoded.0.port)!)
                 case .ipv6:
                     guard let value = IPv6Address(address.bytes) else { return nil }
-                    return .hostPort(host: .ipv6(value), port: .init(rawValue: decoded.0.port)!)
+                    endpoint = .hostPort(host: .ipv6(value), port: .init(rawValue: decoded.0.port)!)
                 }
+                let id = "qr|\(peerKey)|\(index)|\(endpoint.debugDescription)"
+                endpointByCandidateID[id] = endpoint
+                return AuthenticatedPeerRoute(id: id, endpointTicket: decoded.0.ticket)
             }
-            ticket = decoded.0.ticket
-        } else {
-            endpoints = routesByPeer[peerID]?.values.map(\.endpoint) ?? []
-            ticket = nil
         }
-        guard !endpoints.isEmpty else { throw MacTransferError.connection("Peer is offline. Ask the receiver to show its endpoint QR.") }
+
+        let automaticRoutes = routesByPeer[peerKey].map { Array($0.values) } ?? []
+        return automaticRoutes
+            .sorted { $0.id < $1.id }
+            .map { route in
+                let id = "bonjour|\(peerKey)|\(route.id)"
+                endpointByCandidateID[id] = route.endpoint
+                return AuthenticatedPeerRoute(id: id)
+            }
+    }
+
+    func authenticate(
+        peerID: Data,
+        route: AuthenticatedPeerRoute
+    ) async throws -> any OutboundTransferRecordChannel {
+        let peerKey = peerID.hexString
+        guard try await repository.peer(id: peerKey) != nil else {
+            throw MacTransferError.remoteFailure("peer_unpaired")
+        }
+        guard let endpoint = endpointByCandidateID[route.id] else {
+            throw MacTransferError.connection("Peer route is stale")
+        }
         let identity = UnsafeSendableIdentity(try identityStore.loadIdentity())
-        let pin = try peerID.transferHexData
-        return try await withThrowingTaskGroup(of: MacConnectedPeer.self) { group in
-            for (index, endpoint) in endpoints.prefix(8).enumerated() {
-                group.addTask {
-                    if index > 0 { try await Task.sleep(for: .milliseconds(250 * index)) }
-                    let channel = try NWTLSRecordChannel(endpoint: endpoint, identity: identity.value, peerSPKIPin: pin)
-                    try await channel.connect()
-                    return MacConnectedPeer(peerID: peerID, channel: channel, endpointTicket: ticket)
-                }
-            }
-            var lastError: Error = MacTransferError.connection("No reachable Peer route")
-            while !group.isEmpty {
-                do {
-                    if let winner = try await group.next() {
-                        group.cancelAll()
-                        return winner
-                    }
-                } catch {
-                    lastError = error
-                }
-            }
-            throw lastError
-        }
+        let channel = try NWTLSRecordChannel(endpoint: endpoint, identity: identity.value, peerSPKIPin: peerID)
+        try await channel.connect()
+        return channel
     }
 
     func invalidate(peerID: String) {
+        let routeIDs = routesByPeer[peerID].map { Array($0.keys) } ?? []
+        for routeID in routeIDs { endpointByCandidateID["bonjour|\(peerID)|\(routeID)"] = nil }
+        endpointByCandidateID = endpointByCandidateID.filter { !$0.key.hasPrefix("qr|\(peerID)|") }
         routesByPeer[peerID] = nil
         peerByRoute = peerByRoute.filter { $0.value != peerID }
         onlinePeerIDs.remove(peerID)
@@ -138,6 +136,7 @@ final class MacPeerConnectionModule: ObservableObject {
 
     private func remove(routeID: String) {
         guard let peerID = peerByRoute.removeValue(forKey: routeID) else { return }
+        endpointByCandidateID["bonjour|\(peerID)|\(routeID)"] = nil
         routesByPeer[peerID]?[routeID] = nil
         if routesByPeer[peerID]?.isEmpty != false { routesByPeer[peerID] = nil; onlinePeerIDs.remove(peerID) }
     }

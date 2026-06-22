@@ -20,11 +20,76 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dev.swiftshare.domain.TransferErrorCategory
+import dev.swiftshare.domain.TransferSessionScheduler
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CopyOnWriteArraySet
 
 enum class AndroidAvailabilityPolicy { AVAILABLE_WHILE_OPEN, RECEIVE_MODE }
+
+sealed interface ReceiveAvailabilityInput {
+    data class AppVisibility(val foreground: Boolean) : ReceiveAvailabilityInput
+    data class ReceiveModeLifecycle(val active: Boolean) : ReceiveAvailabilityInput
+    data class SelectPolicy(val policy: AndroidAvailabilityPolicy) : ReceiveAvailabilityInput
+    data object PairedPeersChanged : ReceiveAvailabilityInput
+    data object StopRequested : ReceiveAvailabilityInput
+    data class Blocked(val reason: String) : ReceiveAvailabilityInput
+}
+
+internal data class ReceiveAvailabilityDecision(
+    val shouldListen: Boolean,
+    val restartAdvertisingEpoch: Boolean = false,
+)
+
+internal class ReceiveAvailabilityModel(
+    initialPolicy: AndroidAvailabilityPolicy,
+    initialNetworkSignature: String,
+) {
+    var policy: AndroidAvailabilityPolicy = initialPolicy
+        private set
+    private var appForeground = false
+    private var receiveModeActive = false
+    private var suppressedUntilNextForeground = false
+    private var networkSignature = initialNetworkSignature
+
+    fun accept(input: ReceiveAvailabilityInput): ReceiveAvailabilityDecision {
+        when (input) {
+            is ReceiveAvailabilityInput.AppVisibility -> {
+                if (input.foreground && !appForeground) suppressedUntilNextForeground = false
+                appForeground = input.foreground
+            }
+            is ReceiveAvailabilityInput.ReceiveModeLifecycle -> receiveModeActive = input.active
+            is ReceiveAvailabilityInput.SelectPolicy -> {
+                policy = input.policy
+                suppressedUntilNextForeground = false
+            }
+            ReceiveAvailabilityInput.PairedPeersChanged -> Unit
+            ReceiveAvailabilityInput.StopRequested -> {
+                policy = AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN
+                receiveModeActive = false
+                suppressedUntilNextForeground = true
+            }
+            is ReceiveAvailabilityInput.Blocked -> Unit
+        }
+        return decision()
+    }
+
+    fun networkChanged(signature: String): ReceiveAvailabilityDecision {
+        val changed = signature != networkSignature
+        networkSignature = signature
+        return decision(restartAdvertisingEpoch = changed && shouldListen())
+    }
+
+    private fun decision(restartAdvertisingEpoch: Boolean = false) = ReceiveAvailabilityDecision(
+        shouldListen = shouldListen(),
+        restartAdvertisingEpoch = restartAdvertisingEpoch,
+    )
+
+    private fun shouldListen(): Boolean = when (policy) {
+        AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN -> appForeground && !suppressedUntilNextForeground
+        AndroidAvailabilityPolicy.RECEIVE_MODE -> receiveModeActive
+    }
+}
 
 sealed interface AvailabilityRuntimeState {
     data object Inactive : AvailabilityRuntimeState
@@ -111,12 +176,25 @@ class ReceiveRuntime(
     private val endpointQrIssuer = AndroidEndpointQrIssuer(context, identityStore, endpointTickets)
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private var server: FixedEndpointReceiveServer? = null
-    private var appForeground = false
-    private var serviceActive = false
-    private var suppressedUntilNextForeground = false
+    private var activeServerGeneration: Long? = null
+    private var nextServerGeneration = 0L
+    private val receivers = mutableMapOf<Long, FixedEndpointReceiveServer>()
+    private var transferScheduler: TransferSessionScheduler? = null
     private var restartScheduled = false
-    private var lastNetworkSignature = networkSignature()
-    @Volatile private var snapshot = initialSnapshot()
+    private val initialPolicy = runCatching { policies.read() }
+    private val availabilityModel = ReceiveAvailabilityModel(
+        initialPolicy.getOrDefault(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN),
+        networkSignature(),
+    )
+    @Volatile private var snapshot = ReceiveRuntimeSnapshot(
+        availabilityModel.policy,
+        if (initialPolicy.isFailure) {
+            AvailabilityRuntimeState.Blocked("policy_storage_error")
+        } else {
+            AvailabilityRuntimeState.Inactive
+        },
+        ReceiveServerState.Stopped,
+    )
 
     init {
         runCatching {
@@ -138,46 +216,28 @@ class ReceiveRuntime(
 
     fun removeObserver(observer: (ReceiveRuntimeSnapshot) -> Unit) { observers -= observer }
 
-    fun enterForeground() {
-        if (!appForeground) suppressedUntilNextForeground = false
-        appForeground = true
-        reconcile()
-    }
-
-    fun leaveForeground() {
-        appForeground = false
-        suppressedUntilNextForeground = false
-        if (policyOrDefault() == AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN) stop()
-    }
-
-    fun setServiceActive(value: Boolean) {
-        serviceActive = value
-        reconcile()
-    }
-
-    fun setPolicy(policy: AndroidAvailabilityPolicy, startImmediately: Boolean = true) {
+    @Synchronized fun accept(input: ReceiveAvailabilityInput) {
+        if (input is ReceiveAvailabilityInput.Blocked) {
+            applyDecision(ReceiveAvailabilityDecision(shouldListen = false))
+            publishAvailability(AvailabilityRuntimeState.Blocked(input.reason))
+            return
+        }
         try {
-            policies.write(policy)
-            if (startImmediately) suppressedUntilNextForeground = false
-            publish(snapshot.copy(policy = policy))
-            if (startImmediately) reconcile() else stop()
+            when (input) {
+                is ReceiveAvailabilityInput.SelectPolicy -> policies.write(input.policy)
+                ReceiveAvailabilityInput.StopRequested -> policies.write(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN)
+                else -> Unit
+            }
+            val decision = availabilityModel.accept(input)
+            publish(snapshot.copy(policy = availabilityModel.policy))
+            applyDecision(decision)
         } catch (error: Exception) {
+            applyDecision(ReceiveAvailabilityDecision(shouldListen = false))
             publishAvailability(AvailabilityRuntimeState.Blocked(error.message ?: "policy_storage_error"))
-            stop()
         }
     }
 
-    fun reconcile() {
-        val policy = policyOrDefault()
-        publish(snapshot.copy(policy = policy))
-        val shouldRun = when (policy) {
-            AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN -> appForeground && !suppressedUntilNextForeground
-            AndroidAvailabilityPolicy.RECEIVE_MODE -> serviceActive
-        }
-        if (shouldRun) start() else stop()
-    }
-
-    @Synchronized fun start() {
+    @Synchronized private fun startListener() {
         if (server != null) return
         if (trustRepository.storageError() != null) {
             publishAvailability(AvailabilityRuntimeState.Blocked("peer_storage_error")); return
@@ -191,20 +251,31 @@ class ReceiveRuntime(
         publishAvailability(AvailabilityRuntimeState.Starting)
         try {
             val localIdentity = identityStore.loadOrCreate()
+            val scheduler = transferScheduler ?: TransferSessionScheduler(localIdentity.spkiSha256).also {
+                transferScheduler = it
+            }
             val tls = DevelopmentTlsContextFactory(identityStore).create(trustRepository)
+            val generation = ++nextServerGeneration
             val value = FixedEndpointReceiveServer(
                 tlsContext = tls,
                 destination = MediaStoreDestination(context.contentResolver),
                 authenticatedSenderName = "Paired Mac",
-                localDeviceId = localIdentity.spkiSha256,
+                scheduler = scheduler,
                 trustRepository = trustRepository,
                 endpointTickets = endpointTickets,
-                listener = ReceiveServerListener(::onServerState),
+                listener = ReceiveServerListener { state -> onServerState(generation, state) },
             )
             server = value
+            activeServerGeneration = generation
+            receivers[generation] = value
             value.start(0)
         } catch (error: Exception) {
+            val failedServer = server
+            val failedGeneration = activeServerGeneration
             server = null
+            activeServerGeneration = null
+            if (failedGeneration != null) receivers.remove(failedGeneration)
+            runCatching { failedServer?.close() }
             publish(snapshot.copy(
                 availability = AvailabilityRuntimeState.Blocked(error.message ?: "receive_start_failed"),
                 transfer = ReceiveServerState.Failed(TransferErrorCategory.AUTHENTICATION, error.message ?: "receive_start_failed"),
@@ -212,7 +283,7 @@ class ReceiveRuntime(
         }
     }
 
-    @Synchronized fun stop() {
+    @Synchronized private fun stopListener() {
         val value = server
         if (value == null) {
             if (snapshot.availability !is AvailabilityRuntimeState.Blocked) {
@@ -221,66 +292,76 @@ class ReceiveRuntime(
             return
         }
         server = null
+        activeServerGeneration = null
         publishAvailability(AvailabilityRuntimeState.Stopping)
         advertiser.stop()
         endpointTickets.invalidate()
         value.setDiscoveryEpoch(null)
-        value.close()
-        publish(ReceiveRuntimeSnapshot(policyOrDefault(), AvailabilityRuntimeState.Inactive, ReceiveServerState.Stopped))
-    }
-
-    fun approve() = server?.approve()
-    fun reject() = server?.reject()
-    fun cancelActive() = server?.cancelActive()
-    fun unpairActive(peerIdHex: String) = server?.unpairActive(peerIdHex)
-
-    fun stopFromNotification() {
-        suppressedUntilNextForeground = true
-        serviceActive = false
-        try {
-            policies.write(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN)
-            publish(snapshot.copy(policy = AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN))
-        } catch (error: Exception) {
-            publishAvailability(AvailabilityRuntimeState.Blocked(error.message ?: "policy_storage_error"))
+        value.stopAccepting()
+        val retainedTransfer = when (val transfer = snapshot.transfer) {
+            is ReceiveServerState.AwaitingApproval,
+            is ReceiveServerState.Receiving,
+            is ReceiveServerState.Verifying,
+            -> transfer
+            else -> ReceiveServerState.Stopped
         }
-        stop()
+        publish(
+            ReceiveRuntimeSnapshot(
+                availabilityModel.policy,
+                AvailabilityRuntimeState.Inactive,
+                retainedTransfer,
+            ),
+        )
     }
 
-    fun block(reason: String) {
-        stop()
-        publishAvailability(AvailabilityRuntimeState.Blocked(reason))
+    fun approve() = receivers.values.forEach(FixedEndpointReceiveServer::approve)
+    fun reject() = receivers.values.forEach(FixedEndpointReceiveServer::reject)
+    fun cancelActive() = receivers.values.forEach(FixedEndpointReceiveServer::cancelActive)
+    fun unpairActive(peerIdHex: String) = receivers.values.forEach { it.unpairActive(peerIdHex) }
+
+    private fun applyDecision(decision: ReceiveAvailabilityDecision) {
+        if (decision.restartAdvertisingEpoch && server != null) {
+            publishAvailability(AvailabilityRuntimeState.Restarting("network_changed"))
+            stopListener()
+        }
+        if (decision.shouldListen) startListener() else stopListener()
     }
 
-    private fun onServerState(state: ReceiveServerState) {
+    private fun onServerState(generation: Long, state: ReceiveServerState) {
         main.post {
-            if (state is ReceiveServerState.Listening && server != null) {
+            if (state is ReceiveServerState.Listening && generation == activeServerGeneration && server != null) {
                 try {
                     val epoch = advertiser.start(state.port)
                     server?.setDiscoveryEpoch(epoch.rotatingId)
                     val qr = runCatching { endpointQrIssuer.issue(state.port) }.getOrNull()
-                    publish(ReceiveRuntimeSnapshot(policyOrDefault(), AvailabilityRuntimeState.Available(state.port), state, qr))
+                    val transfer = when (snapshot.transfer) {
+                        is ReceiveServerState.AwaitingApproval,
+                        is ReceiveServerState.Receiving,
+                        is ReceiveServerState.Verifying,
+                        -> snapshot.transfer
+                        else -> state
+                    }
+                    publish(
+                        ReceiveRuntimeSnapshot(
+                            availabilityModel.policy,
+                            AvailabilityRuntimeState.Available(state.port),
+                            transfer,
+                            qr,
+                        ),
+                    )
                 } catch (error: Exception) {
                     publishAvailability(AvailabilityRuntimeState.Blocked(error.message ?: "discovery_start_failed"))
                 }
-            } else if (server != null || state is ReceiveServerState.Completed || state is ReceiveServerState.Failed) {
+            } else if (state is ReceiveServerState.Completed || state is ReceiveServerState.Failed) {
+                publish(snapshot.copy(transfer = state))
+                if (generation != activeServerGeneration) receivers.remove(generation)
+            } else if (state is ReceiveServerState.Stopped && generation != activeServerGeneration) {
+                val receiver = receivers[generation]
+                if (receiver?.hasActiveTransfer() != true) receivers.remove(generation)
+            } else if (state !is ReceiveServerState.Listening && state !is ReceiveServerState.Stopped) {
                 publish(snapshot.copy(transfer = state))
             }
         }
-    }
-
-    private fun policyOrDefault(): AndroidAvailabilityPolicy = try {
-        policies.read()
-    } catch (error: Exception) {
-        publishAvailability(AvailabilityRuntimeState.Blocked(error.message ?: "policy_storage_error"))
-        AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN
-    }
-
-    private fun initialSnapshot(): ReceiveRuntimeSnapshot {
-        val policy = runCatching { policies.read() }.getOrDefault(AndroidAvailabilityPolicy.AVAILABLE_WHILE_OPEN)
-        val availability = if (runCatching { policies.read() }.isFailure) {
-            AvailabilityRuntimeState.Blocked("policy_storage_error")
-        } else AvailabilityRuntimeState.Inactive
-        return ReceiveRuntimeSnapshot(policy, availability, ReceiveServerState.Stopped)
     }
 
     private fun publishAvailability(value: AvailabilityRuntimeState) = publish(snapshot.copy(availability = value))
@@ -310,13 +391,7 @@ class ReceiveRuntime(
         main.postDelayed({
             restartScheduled = false
             val next = networkSignature()
-            if (next == lastNetworkSignature) return@postDelayed
-            lastNetworkSignature = next
-            if (server != null) {
-                publishAvailability(AvailabilityRuntimeState.Restarting("network_changed"))
-                stop()
-            }
-            reconcile()
+            applyDecision(availabilityModel.networkChanged(next))
         }, 500)
     }
 }
@@ -335,25 +410,25 @@ class ReceiveModeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            app.receiveRuntime.stopFromNotification()
+            app.receiveRuntime.accept(ReceiveAvailabilityInput.StopRequested)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
         val policy = runCatching { app.availabilityPolicies.read() }.getOrNull()
         if (policy != AndroidAvailabilityPolicy.RECEIVE_MODE || !notificationsVisible()) {
-            app.receiveRuntime.setServiceActive(false)
+            app.receiveRuntime.accept(ReceiveAvailabilityInput.ReceiveModeLifecycle(active = false))
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
-        app.receiveRuntime.setServiceActive(true)
+        app.receiveRuntime.accept(ReceiveAvailabilityInput.ReceiveModeLifecycle(active = true))
         return START_STICKY
     }
 
     override fun onDestroy() {
         app.receiveRuntime.removeObserver(observer)
-        app.receiveRuntime.setServiceActive(false)
+        app.receiveRuntime.accept(ReceiveAvailabilityInput.ReceiveModeLifecycle(active = false))
         super.onDestroy()
     }
 

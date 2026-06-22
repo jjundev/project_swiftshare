@@ -32,6 +32,12 @@
 		A10000000000000000000017 /* Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* Discovery.swift */; };
 		A10000000000000000000018 /* MacLanDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* MacLanDiscovery.swift */; };
 		A10000000000000000000019 /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* DiscoveryTests.swift */; };
+		A1000000000000000000001A /* OutboundTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* OutboundTransferSession.swift */; };
+		A1000000000000000000001B /* OutboundTransferSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* OutboundTransferSessionTests.swift */; };
+		A1000000000000000000001C /* AuthenticatedPeerLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* AuthenticatedPeerLocation.swift */; };
+		A1000000000000000000001D /* AuthenticatedPeerLocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */; };
+		A1000000000000000000001E /* PairingOrchestration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* PairingOrchestration.swift */; };
+		A1000000000000000000001F /* PairingOrchestrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* PairingOrchestrationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,6 +96,12 @@
 		B10000000000000000000018 /* Discovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Discovery.swift; sourceTree = "<group>"; };
 		B10000000000000000000019 /* MacLanDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLanDiscovery.swift; sourceTree = "<group>"; };
 		B1000000000000000000001A /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000001B /* OutboundTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundTransferSession.swift; sourceTree = "<group>"; };
+		B1000000000000000000001C /* OutboundTransferSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundTransferSessionTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000001D /* AuthenticatedPeerLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedPeerLocation.swift; sourceTree = "<group>"; };
+		B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedPeerLocationTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000001F /* PairingOrchestration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOrchestration.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* PairingOrchestrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOrchestrationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +142,9 @@
 				B10000000000000000000012 /* Pairing.swift */,
 				B10000000000000000000015 /* PairingWire.swift */,
 				B10000000000000000000018 /* Discovery.swift */,
+				B1000000000000000000001B /* OutboundTransferSession.swift */,
+				B1000000000000000000001D /* AuthenticatedPeerLocation.swift */,
+				B1000000000000000000001F /* PairingOrchestration.swift */,
 			);
 			path = SwiftShareDomain;
 			sourceTree = "<group>";
@@ -157,6 +172,9 @@
 				B1000000000000000000000E /* TransferRolesTests.swift */,
 				B10000000000000000000013 /* PairingTests.swift */,
 				B1000000000000000000001A /* DiscoveryTests.swift */,
+				B1000000000000000000001C /* OutboundTransferSessionTests.swift */,
+				B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */,
+				B10000000000000000000020 /* PairingOrchestrationTests.swift */,
 			);
 			path = SwiftShareDomainTests;
 			sourceTree = "<group>";
@@ -251,9 +269,9 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		D20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* ContractFoundation.swift in Sources */, A10000000000000000000002 /* TransferSession.swift in Sources */, A1000000000000000000000B /* TransferWire.swift in Sources */, A1000000000000000000000C /* TransferRoles.swift in Sources */, A10000000000000000000011 /* Pairing.swift in Sources */, A10000000000000000000014 /* PairingWire.swift in Sources */, A10000000000000000000017 /* Discovery.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* ContractFoundation.swift in Sources */, A10000000000000000000002 /* TransferSession.swift in Sources */, A1000000000000000000000B /* TransferWire.swift in Sources */, A1000000000000000000000C /* TransferRoles.swift in Sources */, A10000000000000000000011 /* Pairing.swift in Sources */, A10000000000000000000014 /* PairingWire.swift in Sources */, A10000000000000000000017 /* Discovery.swift in Sources */, A1000000000000000000001A /* OutboundTransferSession.swift in Sources */, A1000000000000000000001C /* AuthenticatedPeerLocation.swift in Sources */, A1000000000000000000001E /* PairingOrchestration.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
 		D20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003 /* SwiftShareApp.swift in Sources */, A10000000000000000000010 /* MacFixedEndpointSender.swift in Sources */, A10000000000000000000015 /* MacPairing.swift in Sources */, A10000000000000000000016 /* MacTrustRepository.swift in Sources */, A10000000000000000000018 /* MacLanDiscovery.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
-		D20000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* FoundationContractTests.swift in Sources */, A10000000000000000000007 /* TransferSessionTests.swift in Sources */, A1000000000000000000000D /* TransferWireTests.swift in Sources */, A1000000000000000000000E /* TransferRolesTests.swift in Sources */, A10000000000000000000012 /* PairingTests.swift in Sources */, A10000000000000000000019 /* DiscoveryTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* FoundationContractTests.swift in Sources */, A10000000000000000000007 /* TransferSessionTests.swift in Sources */, A1000000000000000000000D /* TransferWireTests.swift in Sources */, A1000000000000000000000E /* TransferRolesTests.swift in Sources */, A10000000000000000000012 /* PairingTests.swift in Sources */, A10000000000000000000019 /* DiscoveryTests.swift in Sources */, A1000000000000000000001B /* OutboundTransferSessionTests.swift in Sources */, A1000000000000000000001D /* AuthenticatedPeerLocationTests.swift in Sources */, A1000000000000000000001F /* PairingOrchestrationTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
