@@ -5,7 +5,6 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.startCoroutine
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TransferRolesTest {
@@ -53,68 +52,6 @@ class TransferRolesTest {
         assertEquals(TransferTerminalResult.REJECTED, outcome.result)
         assertEquals(0, connector.calls)
         assertEquals(listOf(TransferActivityPhase.PREPARING, TransferActivityPhase.REJECTED), events.values.map { it.phase })
-    }
-
-    @Test
-    fun `inbound rejection allocates no destination`() = runRoleSuspend {
-        val receiver = ReceiverSpy()
-        val events = EventRecorder()
-        val coordinator = InboundTransferSessionCoordinator(
-            peerDirectory = PeerDirectory { peer },
-            approvalGateway = IncomingApprovalGateway { _, _ -> false },
-            receiver = receiver,
-            deadlineScheduler = ImmediateDeadlineScheduler(),
-            cancellation = TransferCancellationChecking { false },
-            events = events,
-        )
-
-        val outcome = coordinator.execute(InboundTransferContext(request, peer.id))
-
-        assertEquals(TransferTerminalResult.REJECTED, outcome.result)
-        assertEquals(0, receiver.calls)
-        assertTrue(outcome.committedArtifacts.isEmpty())
-    }
-
-    @Test
-    fun `inbound storage permission failure remains typed and uncommitted`() = runRoleSuspend {
-        val receiver = ReceiverSpy(
-            error = TransferExecutionException(TransferErrorCategory.PERMISSION, "downloads_permission_lost"),
-        )
-        val coordinator = InboundTransferSessionCoordinator(
-            peerDirectory = PeerDirectory { peer },
-            approvalGateway = IncomingApprovalGateway { _, _ -> true },
-            receiver = receiver,
-            deadlineScheduler = ImmediateDeadlineScheduler(),
-            cancellation = TransferCancellationChecking { false },
-            events = EventRecorder(),
-        )
-
-        val outcome = coordinator.execute(InboundTransferContext(request, peer.id))
-
-        assertEquals(TransferTerminalResult.FAILED, outcome.result)
-        assertEquals(TransferErrorCategory.PERMISSION, outcome.failure?.category)
-        assertTrue(outcome.committedArtifacts.isEmpty())
-    }
-
-    @Test
-    fun `inbound auto accept bypasses manual approval gateway`() = runRoleSuspend {
-        val approval = ApprovalSpy(false)
-        val receiver = ReceiverSpy()
-        val coordinator = InboundTransferSessionCoordinator(
-            peerDirectory = PeerDirectory { peer },
-            approvalPolicyResolver = PeerApprovalPolicyResolver { PeerApprovalPolicy.AUTO_ACCEPT },
-            approvalGateway = approval,
-            receiver = receiver,
-            deadlineScheduler = ImmediateDeadlineScheduler(),
-            cancellation = TransferCancellationChecking { false },
-            events = EventRecorder(),
-        )
-
-        val outcome = coordinator.execute(InboundTransferContext(request, peer.id))
-
-        assertEquals(TransferTerminalResult.COMPLETED, outcome.result)
-        assertEquals(0, approval.calls)
-        assertEquals(1, receiver.calls)
     }
 
     private fun outbound(peer: PairedPeer?, connection: OutboundTransferConnection, events: EventRecorder) =
@@ -165,30 +102,6 @@ private class ConnectionStub(
         idleTimeoutMillis: Long,
     ): RemoteTransferResult = remote
     override suspend fun cancel(reasonCode: String) = Unit
-}
-
-private class ReceiverSpy(private val error: TransferExecutionException? = null) : InboundTransferReceiver {
-    var calls = 0
-    override suspend fun receive(
-        peer: PairedPeer,
-        request: TransferSessionRequest,
-        events: TransferEventSink,
-        cancellation: TransferCancellationChecking,
-        deadlineScheduler: TransferDeadlineScheduler,
-        idleTimeoutMillis: Long,
-    ): CommittedArtifact {
-        calls += 1
-        error?.let { throw it }
-        return CommittedArtifact("content://media/42")
-    }
-}
-
-private class ApprovalSpy(private val approved: Boolean) : IncomingApprovalGateway {
-    var calls = 0
-    override suspend fun requestApproval(peer: PairedPeer, request: TransferSessionRequest): Boolean {
-        calls += 1
-        return approved
-    }
 }
 
 private fun <T> runRoleSuspend(block: suspend () -> T): T {

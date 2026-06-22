@@ -130,9 +130,27 @@ final class MacPairingService: @unchecked Sendable {
         confirm: @escaping @Sendable (PairingDeviceDescriptor, String) async -> Bool,
         waitingForRemote: @escaping @Sendable () async -> Void
     ) async throws -> MacStoredPeer {
+        let session = PairingResponderSession(
+            listening: MacPairingListening(identityStore: identityStore, queue: queue),
+            cryptography: MacPairingCryptography(identityStore: identityStore),
+            committer: MacPairingCommitter(repository: repository),
+            confirmation: ClosurePairingConfirmation(handler: confirm),
+            events: ClosurePairingEvents(onQR: onQR, waitingForRemote: waitingForRemote)
+        )
+        let outcome = try await session.execute(host: host)
+        guard let peer = try await repository.peer(id: outcome.peer.keyID.hexString) else {
+            throw PairingError.storage
+        }
+        return peer
+    }
+}
+
+private struct MacPairingListening: PairingResponderListening {
+    let identityStore: MacDevelopmentIdentityStore
+    let queue: DispatchQueue
+
+    func listen() async throws -> PairingResponderAdmission {
         let identity = try identityStore.loadIdentity()
-        let certificateDER = try identityStore.certificateData(for: identity)
-        let spki = try identityStore.canonicalSPKI(for: identity)
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
         sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
@@ -143,92 +161,123 @@ final class MacPairingService: @unchecked Sendable {
             listener.newConnectionHandler = { continuation.yield($0) }
             continuation.onTermination = { _ in listener.cancel() }
         }
-        try await waitUntilReady(listener)
+        try await withCheckedThrowingContinuation { continuation in
+            let gate = PairingContinuationGate<Void>(continuation)
+            listener.stateUpdateHandler = { state in
+                switch state {
+                case .ready: gate.resume(())
+                case .failed(let error): gate.fail(error)
+                case .cancelled: gate.fail(PairingError.cancelled)
+                default: break
+                }
+            }
+            listener.start(queue: queue)
+        }
         guard let port = listener.port?.rawValue else { throw PairingError.invalidQR }
-        let token = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
-        let payload = try PairingQRPayload(
-            sessionID: UUID(), host: host, port: port,
-            certificateSHA256: Data(SHA256.hash(data: certificateDER)), token: token,
-            expiresAt: Date().addingTimeInterval(PairingLimits().admissionDuration)
+        return PairingResponderAdmission(
+            port: port,
+            listener: MacPairingAdmission(listener: listener, connections: connections, queue: queue)
         )
-        let session = PairingSession(payload: payload)
-        try await onQR(payload)
+    }
+}
+
+private final class MacPairingAdmission: PairingResponderListener, @unchecked Sendable {
+    private let listener: NWListener
+    private let connections: AsyncStream<NWConnection>
+    private let queue: DispatchQueue
+
+    init(listener: NWListener, connections: AsyncStream<NWConnection>, queue: DispatchQueue) {
+        self.listener = listener
+        self.connections = connections
+        self.queue = queue
+    }
+
+    func accept(payload: PairingQRPayload) async throws -> any PairingResponderChannel {
         guard let connection = await connections.first(where: { _ in true }) else { throw PairingError.cancelled }
-        defer { listener.cancel(); connection.cancel() }
         let channel = MacPairingChannel(connection: connection, queue: queue)
         try await channel.connect()
-        guard case .clientStart(let sessionID, let presentedToken, let androidWire, let clientNonce) = try await channel.receive() else {
-            throw PairingError.invalidTranscript
-        }
-        try await session.admit(sessionID: sessionID, token: presentedToken, now: Date())
-        let androidDescriptor = try androidWire.descriptor
-        guard certificateSPKI(androidWire.certificateDER) == androidDescriptor.canonicalSPKI else { throw PairingError.invalidIdentity }
-        let macDescriptor = try PairingDeviceDescriptor(
+        return channel
+    }
+
+    func close() async { listener.cancel() }
+}
+
+private struct MacPairingCryptography: PairingResponderCryptography {
+    let identityStore: MacDevelopmentIdentityStore
+
+    func localIdentity() async throws -> PairingResponderIdentity {
+        let identity = try identityStore.loadIdentity()
+        let certificate = try identityStore.certificateData(for: identity)
+        let spki = try identityStore.canonicalSPKI(for: identity)
+        let descriptor = try PairingDeviceDescriptor(
             canonicalSPKI: spki,
             displayName: String((Host.current().localizedName ?? "Mac").prefix(128)),
             platform: "macos"
         )
-        let macWire = PairingWireDevice(certificateDER: certificateDER, canonicalSPKI: spki, displayName: macDescriptor.displayName, platform: macDescriptor.platform)
-        let serverNonce = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
-        try await channel.send(.serverChallenge(device: macWire, nonce: serverNonce))
-        let transcript = try PairingTranscript(
-            sessionID: payload.sessionID, token: token, certificateSHA256: payload.certificateSHA256,
-            clientNonce: clientNonce, serverNonce: serverNonce, mac: macDescriptor, android: androidDescriptor
+        return PairingResponderIdentity(
+            device: PairingWireDevice(
+                certificateDER: certificate,
+                canonicalSPKI: spki,
+                displayName: descriptor.displayName,
+                platform: descriptor.platform
+            ),
+            certificateSHA256: Data(SHA256.hash(data: certificate))
         )
-        guard case .clientProof(let clientSignature) = try await channel.receive(),
-              verifyP1363(certificateDER: androidWire.certificateDER, digest: transcript.proofDigest(for: .android), signature: clientSignature)
-        else { throw PairingError.invalidProof }
-        try await session.claim(candidateKeyID: androidDescriptor.keyID, proofIsValid: true, now: Date())
-        try await channel.send(.serverProof(signature: try identityStore.signP1363(transcript.proofDigest(for: .mac), identity: identity)))
-        let localAccepted = await confirm(androidDescriptor, transcript.comparisonCode)
-        guard case .clientDecision(let remoteAccepted, let decisionSignature) = try await channel.receive() else { throw PairingError.invalidTranscript }
-        let remoteDecisionDigest = macDecisionDigest(transcript: transcript.digest, accepted: remoteAccepted)
-        guard verifyP1363(certificateDER: androidWire.certificateDER, digest: remoteDecisionDigest, signature: decisionSignature) else { throw PairingError.invalidProof }
-        guard localAccepted, remoteAccepted else { await session.cancel(); try await channel.send(.error(code: "user_rejected")); throw PairingError.cancelled }
-        await waitingForRemote()
-        try await session.requireConfirmation(candidateKeyID: androidDescriptor.keyID, now: Date())
-        let peer = try await repository.upsert(androidDescriptor)
-        try await session.commit(candidateKeyID: androidDescriptor.keyID, now: Date())
-        let committedAt = Date()
-        let unsigned = PairingWireMessage.commitReceipt(
-            sessionID: payload.sessionID, transcriptSHA256: transcript.digest,
-            macKeyID: macDescriptor.keyID, androidKeyID: androidDescriptor.keyID,
-            committedAt: committedAt, signature: Data(repeating: 0, count: 64)
-        )
-        guard case .commitReceipt(let rid, let td, let mk, let ak, let date, _) = unsigned else { throw PairingError.invalidTranscript }
-        let digest = macReceiptDigest(sessionID: rid, transcript: td, mac: mk, android: ak, date: date)
-        let receipt = PairingWireMessage.commitReceipt(
-            sessionID: rid, transcriptSHA256: td, macKeyID: mk, androidKeyID: ak,
-            committedAt: date, signature: try identityStore.signP1363(digest, identity: identity)
-        )
-        try await channel.send(receipt)
-        guard case .commitAck(let ack) = try await channel.receive(),
-              ack == Data(SHA256.hash(data: PairingWireCodec.encode(receipt)))
-        else { throw PairingError.invalidTranscript }
-        return peer
     }
 
-    private func waitUntilReady(_ listener: NWListener) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let gate = PairingContinuationGate<Void>(continuation)
-            listener.stateUpdateHandler = { state in
-                switch state { case .ready: gate.resume(()); case .failed(let error): gate.fail(error); case .cancelled: gate.fail(PairingError.cancelled); default: break }
-            }
-            listener.start(queue: queue)
-        }
+    func validateRemote(_ device: PairingWireDevice) async throws -> PairingDeviceDescriptor {
+        let descriptor = try device.descriptor
+        guard let certificate = SecCertificateCreateWithData(nil, device.certificateDER as CFData),
+              let key = SecCertificateCopyKey(certificate),
+              try MacDevelopmentIdentityStore.canonicalSPKI(for: key) == descriptor.canonicalSPKI
+        else { throw PairingError.invalidIdentity }
+        return descriptor
     }
-    private func certificateSPKI(_ der: Data) -> Data? {
-        guard let certificate = SecCertificateCreateWithData(nil, der as CFData), let key = SecCertificateCopyKey(certificate) else { return nil }
-        return try? MacDevelopmentIdentityStore.canonicalSPKI(for: key)
+
+    func sign(_ digest: Data) async throws -> Data {
+        let identity = try identityStore.loadIdentity()
+        return try identityStore.signP1363(digest, identity: identity)
+    }
+
+    func verify(device: PairingWireDevice, digest: Data, signature: Data) async -> Bool {
+        verifyP1363(certificateDER: device.certificateDER, digest: digest, signature: signature)
     }
 }
 
-private final class MacPairingChannel: @unchecked Sendable {
+private struct MacPairingCommitter: PairingPeerCommitting {
+    let repository: MacTrustRepository
+    func commit(_ peer: PairingDeviceDescriptor, at date: Date) async throws {
+        _ = try await repository.upsert(peer, now: date)
+    }
+}
+
+private struct ClosurePairingConfirmation: PairingConfirming {
+    let handler: @Sendable (PairingDeviceDescriptor, String) async -> Bool
+    func confirm(_ request: PairingConfirmationRequest) async -> Bool {
+        await handler(request.peer, request.comparisonCode)
+    }
+}
+
+private struct ClosurePairingEvents: PairingExecutionEventSink {
+    let onQR: @Sendable (PairingQRPayload) async throws -> Void
+    let waitingForRemote: @Sendable () async -> Void
+
+    func emit(_ event: PairingExecutionEvent) async throws {
+        switch event {
+        case .qrIssued(let payload): try await onQR(payload)
+        case .waitingForRemoteCommit: await waitingForRemote()
+        case .completed: break
+        }
+    }
+}
+
+private final class MacPairingChannel: PairingResponderChannel, @unchecked Sendable {
     let connection: NWConnection; let queue: DispatchQueue
     init(connection: NWConnection, queue: DispatchQueue) { self.connection = connection; self.queue = queue }
     func connect() async throws { try await withCheckedThrowingContinuation { continuation in let gate=PairingContinuationGate<Void>(continuation); connection.stateUpdateHandler={ state in switch state { case .ready: gate.resume(()); case .failed(let e): gate.fail(e); case .cancelled: gate.fail(PairingError.cancelled); default: break } }; connection.start(queue: queue) } }
     func send(_ message: PairingWireMessage) async throws { let payload=PairingWireCodec.encode(message); guard payload.count<=65_536 else{throw PairingError.oversized}; var length=UInt32(payload.count).bigEndian; let data=Data([message.type.rawValue])+Data(bytes:&length,count:4)+payload; try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in connection.send(content:data,completion:.contentProcessed{ error in if let error{continuation.resume(throwing:error)}else{continuation.resume()} }) } }
     func receive() async throws -> PairingWireMessage { let header=try await exactly(5); guard let type=PairingRecordType(rawValue:header[0]) else{throw PairingError.invalidTranscript}; let length=header.dropFirst().reduce(UInt32(0)){($0<<8)|UInt32($1)}; guard length<=65_536 else{throw PairingError.oversized}; return try PairingWireCodec.decode(type:type,data:try await exactly(Int(length))) }
+    func close() async { connection.cancel() }
     private func exactly(_ count:Int) async throws -> Data { var result=Data(); while result.count<count { let remaining=count-result.count; let next=try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<Data,Error>) in connection.receive(minimumIncompleteLength:1,maximumLength:remaining){ data,_,complete,error in if let error{continuation.resume(throwing:error)}else if let data,!data.isEmpty{continuation.resume(returning:data)}else if complete{continuation.resume(throwing:PairingError.cancelled)}else{continuation.resume(throwing:PairingError.invalidTranscript)} } }; result.append(next) }; return result }
 }
 
@@ -238,8 +287,5 @@ private final class PairingContinuationGate<Value: Sendable>: @unchecked Sendabl
     func resume(_ value:Value){lock.withLock{continuation?.resume(returning:value);continuation=nil}}
     func fail(_ error:Error){lock.withLock{continuation?.resume(throwing:error);continuation=nil}}
 }
-
-private func macDecisionDigest(transcript:Data,accepted:Bool)->Data{Data(SHA256.hash(data:Data("SwiftShare-Pairing-v1-decision-\(accepted ? "accept":"reject")".utf8)+transcript))}
-private func macReceiptDigest(sessionID:UUID,transcript:Data,mac:Data,android:Data,date:Date)->Data{var seconds=UInt64(date.timeIntervalSince1970).bigEndian;var uuid=sessionID.uuid;return Data(SHA256.hash(data:Data("SwiftShare-Pairing-v1-receipt".utf8)+Data(bytes:&uuid,count:16)+transcript+mac+android+Data(bytes:&seconds,count:8)))}
 
 private extension Data { var hexString:String{map{String(format:"%02x",$0)}.joined()} }
