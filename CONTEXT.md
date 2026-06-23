@@ -24,6 +24,9 @@ The first delivery milestone transfers data over the same LAN. A later milestone
 - **Transfer Session**: One user-confirmed attempt to send one or more Payloads to a Paired Peer. It begins when the sender confirms the Peer and Payload selection, includes locating and reauthenticating the Peer plus receiver admission and approval, and ends with one terminal outcome after Commit or failure.
 - **Transfer Cancellation**: A request to end an active Transfer Session for a stated reason, such as user action, Peer revocation, or Receive Mode shutdown. The Transfer Session remains responsible for reaching its single terminal outcome.
 - **Payload**: A file, folder tree, or clipboard value included in a Transfer Session.
+- **Durable Source**: A sender-side Payload reference whose platform permission and reviewed identity survive ordinary UI or process recreation. Its bytes are still revalidated while streaming.
+- **Receive Destination**: A receiver-owned directory or collection location whose current permission is checked before availability and again before reservation.
+- **Staging Reservation**: A receiver-local, non-final item that owns destination access from creation through abort or Commit and is never exposed as a successful Payload.
 - **Manifest**: The bounded description of all Payload entries, metadata, paths, sizes, and integrity information for a Transfer Session.
 - **Chunk**: A bounded segment of a file Payload used for streaming, verification, and resume.
 - **Commit**: Making a fully received and verified Payload visible in its final destination.
@@ -40,6 +43,7 @@ The first delivery milestone transfers data over the same LAN. A later milestone
 - Auto-accept applies only after current Paired Peer trust, compatibility, and Transfer admission have been revalidated by the receiver.
 - Discovery metadata never establishes identity; identity is accepted only after cryptographic authentication.
 - A received file is not committed until its integrity check succeeds.
+- Losing Durable Source or Receive Destination access fails the Transfer Session without exposing a partial final item.
 - SwiftShare never silently overwrites an existing destination item.
 - File and clipboard contents never appear in Transfer History or Diagnostic Logs.
 - The LAN milestone does not require an internet connection or a SwiftShare backend.

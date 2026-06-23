@@ -1,7 +1,7 @@
 ---
 id: SS-007
 title: "Transfer one durable Android file to a Mac destination"
-status: ready-for-agent
+status: ready-for-human
 type: issue
 parent: .scratch/swiftshare/prd.md
 created: 2026-06-20
@@ -51,3 +51,24 @@ Includes one durable document-picker file sent Android-to-Mac; excludes Shareshe
 - Verify bookmark renewal, destination permission loss, sandbox behavior, name conflicts, cancellation, and integrity refusal.
 - Recreate the Android process after selection and verify the persistable document remains readable.
 - Run the reverse path on at least one supported Mac and Android Device; emulator-only storage acceptance is insufficient.
+
+## Implementation evidence
+
+- Added the production Kotlin outbound and Swift inbound Transfer Session roles with
+  shared device-wide admission, protocol negotiation, approval, bounded Chunk
+  streaming, progress validation, cancellation, integrity verification, and terminal
+  outcomes.
+- Added durable Android document drafts, reverse authenticated LAN discovery, fresh
+  pinned TLS transfer connections, and sender UI.
+- Added writable Mac destination bookmarks, preflight/repair gating, same-directory
+  staging journal, exclusive atomic Commit with numeric suffixes, reverse listener,
+  advertisement, and receiver UI.
+- Recorded the architecture in ADR 0007 and automated/real-device evidence in
+  `docs/acceptance/SS-007.md`.
+- Automated domain tests and both application builds pass. Physical-device,
+  sandbox-permission, fault-injection, collision-race, relaunch recovery, and large
+  document observations remain required, so this issue is `ready-for-human`.
+- Follow-up review fixes serialize Android outbound state/send admission, roll back
+  failed URI grants, generation-gate Mac listener restarts, reject empty Chunks, and
+  add automated regressions for these paths, deterministic destination suffixes, and
+  idempotent abandoned-stage journal reconciliation in the Xcode test target.

@@ -8,10 +8,11 @@ struct SwiftShareApp: App {
     @StateObject private var model = MacTransferModel()
     @StateObject private var pairing = MacPairingModel()
     @StateObject private var launchAtLogin = MacLaunchAtLoginModel()
+    @StateObject private var inbound = MacInboundRuntime.shared
 
     var body: some Scene {
         MenuBarExtra {
-            FixedEndpointTransferView(model: model, pairing: pairing, launchAtLogin: launchAtLogin)
+            FixedEndpointTransferView(model: model, pairing: pairing, launchAtLogin: launchAtLogin, inbound: inbound)
         } label: {
             Image(systemName: "arrow.left.arrow.right.circle.fill")
                 .accessibilityLabel(ProductBoundary.title)
@@ -24,6 +25,7 @@ private struct FixedEndpointTransferView: View {
     @ObservedObject var model: MacTransferModel
     @ObservedObject var pairing: MacPairingModel
     @ObservedObject var launchAtLogin: MacLaunchAtLoginModel
+    @ObservedObject var inbound: MacInboundRuntime
     @State private var scanningEndpointQR = false
 
     var body: some View {
@@ -34,7 +36,7 @@ private struct FixedEndpointTransferView: View {
                         .font(.title)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(LocalizedStringKey(ProductBoundary.title)).font(.title2.bold())
-                        Text("LAN Mode · Mac → Android")
+                        Text("LAN Mode · Mac ↔ Android")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -45,7 +47,47 @@ private struct FixedEndpointTransferView: View {
                     .font(.subheadline)
 
                 PairingSection(model: pairing) { peer in
-                    pairing.unpair(peer) { model.unpair(peerID: peer.id) }
+                    pairing.unpair(peer) {
+                        model.unpair(peerID: peer.id)
+                        inbound.unpair(peerID: peer.id)
+                    }
+                }
+
+                GroupBox("Receive from Android") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        LabeledContent("Destination", value: inbound.destinationName)
+                        Text(inbound.availabilityMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button(inbound.destinationName == "Not configured" ? "Choose destination…" : "Change destination…") {
+                            inbound.chooseDestination()
+                        }
+                        if let summary = inbound.incomingSummary, let phase = inbound.incomingPhase {
+                            Divider()
+                            Text("Incoming from \(summary.authenticatedSender)").fontWeight(.semibold)
+                            LabeledContent("File", value: summary.displayName)
+                            LabeledContent("Total", value: ByteCountFormatter.string(fromByteCount: Int64(summary.byteCount), countStyle: .file))
+                            if phase == .awaitingApproval {
+                                HStack {
+                                    Button("Accept", action: inbound.approve).buttonStyle(.borderedProminent)
+                                    Button("Decline", role: .destructive, action: inbound.reject)
+                                }
+                            }
+                            if [.transferring, .verifying, .committing].contains(phase) {
+                                ProgressView(value: Double(inbound.verifiedBytes), total: Double(max(summary.byteCount, 1)))
+                                Text("\(ByteCountFormatter.string(fromByteCount: Int64(inbound.verifiedBytes), countStyle: .file)) verified")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Button("Cancel", role: .destructive, action: inbound.cancel)
+                            }
+                            if phase == .completed, let path = inbound.committedPath {
+                                Text("Saved \(URL(fileURLWithPath: path).lastPathComponent)").foregroundStyle(.green)
+                            }
+                        }
+                        if let error = inbound.errorMessage {
+                            Text(error).font(.caption).foregroundStyle(.red)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 GroupBox("Availability") {
@@ -152,9 +194,12 @@ private struct FixedEndpointTransferView: View {
             }
             .padding(18)
         }
-        .frame(width: 392, height: 680)
+        .frame(width: 420, height: 760)
         .sheet(isPresented: $scanningEndpointQR) {
             EndpointQRScannerView { value in model.endpointQR = value; scanningEndpointQR = false }
+        }
+        .onChange(of: pairing.peers) { _, _ in
+            Task { await inbound.restart() }
         }
     }
 }
