@@ -38,6 +38,12 @@
 		A1000000000000000000001D /* AuthenticatedPeerLocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */; };
 		A1000000000000000000001E /* PairingOrchestration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* PairingOrchestration.swift */; };
 		A1000000000000000000001F /* PairingOrchestrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* PairingOrchestrationTests.swift */; };
+		A10000000000000000000020 /* InboundTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* InboundTransferSession.swift */; };
+		A10000000000000000000021 /* InboundTransferSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* InboundTransferSessionTests.swift */; };
+		A10000000000000000000022 /* MacReceiveDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* MacReceiveDestination.swift */; };
+		A10000000000000000000023 /* MacInboundRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000024 /* MacInboundRuntime.swift */; };
+		A10000000000000000000024 /* MacReceiveDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* MacReceiveDestination.swift */; };
+		A10000000000000000000025 /* MacReceiveDestinationAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* MacReceiveDestinationAdapterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,6 +108,11 @@
 		B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedPeerLocationTests.swift; sourceTree = "<group>"; };
 		B1000000000000000000001F /* PairingOrchestration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOrchestration.swift; sourceTree = "<group>"; };
 		B10000000000000000000020 /* PairingOrchestrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOrchestrationTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* InboundTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundTransferSession.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* InboundTransferSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundTransferSessionTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* MacReceiveDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacReceiveDestination.swift; sourceTree = "<group>"; };
+		B10000000000000000000024 /* MacInboundRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInboundRuntime.swift; sourceTree = "<group>"; };
+		B10000000000000000000025 /* MacReceiveDestinationAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacReceiveDestinationAdapterTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,6 +156,7 @@
 				B1000000000000000000001B /* OutboundTransferSession.swift */,
 				B1000000000000000000001D /* AuthenticatedPeerLocation.swift */,
 				B1000000000000000000001F /* PairingOrchestration.swift */,
+				B10000000000000000000021 /* InboundTransferSession.swift */,
 			);
 			path = SwiftShareDomain;
 			sourceTree = "<group>";
@@ -159,6 +171,8 @@
 				B10000000000000000000016 /* MacPairing.swift */,
 				B10000000000000000000017 /* MacTrustRepository.swift */,
 				B10000000000000000000019 /* MacLanDiscovery.swift */,
+				B10000000000000000000023 /* MacReceiveDestination.swift */,
+				B10000000000000000000024 /* MacInboundRuntime.swift */,
 			);
 			path = SwiftShareApp;
 			sourceTree = "<group>";
@@ -175,6 +189,8 @@
 				B1000000000000000000001C /* OutboundTransferSessionTests.swift */,
 				B1000000000000000000001E /* AuthenticatedPeerLocationTests.swift */,
 				B10000000000000000000020 /* PairingOrchestrationTests.swift */,
+				B10000000000000000000022 /* InboundTransferSessionTests.swift */,
+				B10000000000000000000025 /* MacReceiveDestinationAdapterTests.swift */,
 			);
 			path = SwiftShareDomainTests;
 			sourceTree = "<group>";
@@ -269,9 +285,9 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		D20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* ContractFoundation.swift in Sources */, A10000000000000000000002 /* TransferSession.swift in Sources */, A1000000000000000000000B /* TransferWire.swift in Sources */, A1000000000000000000000C /* TransferRoles.swift in Sources */, A10000000000000000000011 /* Pairing.swift in Sources */, A10000000000000000000014 /* PairingWire.swift in Sources */, A10000000000000000000017 /* Discovery.swift in Sources */, A1000000000000000000001A /* OutboundTransferSession.swift in Sources */, A1000000000000000000001C /* AuthenticatedPeerLocation.swift in Sources */, A1000000000000000000001E /* PairingOrchestration.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
-		D20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003 /* SwiftShareApp.swift in Sources */, A10000000000000000000010 /* MacFixedEndpointSender.swift in Sources */, A10000000000000000000015 /* MacPairing.swift in Sources */, A10000000000000000000016 /* MacTrustRepository.swift in Sources */, A10000000000000000000018 /* MacLanDiscovery.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
-		D20000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* FoundationContractTests.swift in Sources */, A10000000000000000000007 /* TransferSessionTests.swift in Sources */, A1000000000000000000000D /* TransferWireTests.swift in Sources */, A1000000000000000000000E /* TransferRolesTests.swift in Sources */, A10000000000000000000012 /* PairingTests.swift in Sources */, A10000000000000000000019 /* DiscoveryTests.swift in Sources */, A1000000000000000000001B /* OutboundTransferSessionTests.swift in Sources */, A1000000000000000000001D /* AuthenticatedPeerLocationTests.swift in Sources */, A1000000000000000000001F /* PairingOrchestrationTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* ContractFoundation.swift in Sources */, A10000000000000000000002 /* TransferSession.swift in Sources */, A1000000000000000000000B /* TransferWire.swift in Sources */, A1000000000000000000000C /* TransferRoles.swift in Sources */, A10000000000000000000011 /* Pairing.swift in Sources */, A10000000000000000000014 /* PairingWire.swift in Sources */, A10000000000000000000017 /* Discovery.swift in Sources */, A1000000000000000000001A /* OutboundTransferSession.swift in Sources */, A1000000000000000000001C /* AuthenticatedPeerLocation.swift in Sources */, A1000000000000000000001E /* PairingOrchestration.swift in Sources */, A10000000000000000000020 /* InboundTransferSession.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003 /* SwiftShareApp.swift in Sources */, A10000000000000000000010 /* MacFixedEndpointSender.swift in Sources */, A10000000000000000000015 /* MacPairing.swift in Sources */, A10000000000000000000016 /* MacTrustRepository.swift in Sources */, A10000000000000000000018 /* MacLanDiscovery.swift in Sources */, A10000000000000000000022 /* MacReceiveDestination.swift in Sources */, A10000000000000000000023 /* MacInboundRuntime.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D20000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* FoundationContractTests.swift in Sources */, A10000000000000000000007 /* TransferSessionTests.swift in Sources */, A1000000000000000000000D /* TransferWireTests.swift in Sources */, A1000000000000000000000E /* TransferRolesTests.swift in Sources */, A10000000000000000000012 /* PairingTests.swift in Sources */, A10000000000000000000019 /* DiscoveryTests.swift in Sources */, A1000000000000000000001B /* OutboundTransferSessionTests.swift in Sources */, A1000000000000000000001D /* AuthenticatedPeerLocationTests.swift in Sources */, A1000000000000000000001F /* PairingOrchestrationTests.swift in Sources */, A10000000000000000000021 /* InboundTransferSessionTests.swift in Sources */, A10000000000000000000024 /* MacReceiveDestination.swift in Sources */, A10000000000000000000025 /* MacReceiveDestinationAdapterTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -282,12 +298,12 @@
 /* Begin XCBuildConfiguration section */
 		K10000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Debug; };
 		K10000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 6.0;}; name = Release; };
-		K10000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; DEFINES_MODULE = YES; EXECUTABLE_PREFIX = lib; MACH_O_TYPE = staticlib; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0;}; name = Debug; };
+		K10000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; DEFINES_MODULE = YES; ENABLE_TESTABILITY = YES; EXECUTABLE_PREFIX = lib; MACH_O_TYPE = staticlib; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0;}; name = Debug; };
 		K10000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; DEFINES_MODULE = YES; EXECUTABLE_PREFIX = lib; MACH_O_TYPE = staticlib; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0;}; name = Release; };
 		K10000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = SwiftShareApp/SwiftShare.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SwiftShareApp/Info.plist; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0;}; name = Debug; };
 		K10000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_ENTITLEMENTS = SwiftShareApp/SwiftShare.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SwiftShareApp/Info.plist; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0;}; name = Release; };
-		K10000000000000000000007 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Debug; };
-		K10000000000000000000008 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Release; };
+		K10000000000000000000007 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = MAC_APP_ADAPTER_TESTS; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Debug; };
+		K10000000000000000000008 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = YES; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@loader_path/../Frameworks", "@loader_path/../../..", "@executable_path/../Frameworks",); PRODUCT_BUNDLE_IDENTIFIER = dev.swiftshare.macos.domain.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = MAC_APP_ADAPTER_TESTS; SWIFT_VERSION = 6.0; TEST_HOST = "";}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */

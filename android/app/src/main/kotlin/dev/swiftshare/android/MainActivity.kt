@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.swiftshare.domain.PeerApprovalPolicy
+import dev.swiftshare.domain.TransferActivityPhase
 
 class MainActivity : ComponentActivity() {
     private var receiveState by mutableStateOf<ReceiveServerState>(ReceiveServerState.Stopped)
@@ -68,21 +69,27 @@ class MainActivity : ComponentActivity() {
     private var peerRevision by mutableIntStateOf(0)
     private lateinit var trustRepository: AndroidTrustRepository
     private lateinit var runtime: ReceiveRuntime
+    private lateinit var outboundRuntime: AndroidOutboundRuntime
+    private var outboundState by mutableStateOf(AndroidOutboundSnapshot())
     private var pairingClient: AndroidPairingClient? = null
     private lateinit var notificationPermission: ActivityResultLauncher<String>
+    private lateinit var documentPicker: ActivityResultLauncher<Array<String>>
     private val runtimeObserver: (ReceiveRuntimeSnapshot) -> Unit = { value ->
         receiveState = value.transfer
         availabilityState = value.availability
         availabilityPolicy = value.policy
         endpointQr = value.endpointQr
     }
+    private val outboundObserver: (AndroidOutboundSnapshot) -> Unit = { outboundState = it }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as SwiftShareApplication
         trustRepository = app.trustRepository
         runtime = app.receiveRuntime
+        outboundRuntime = app.outboundRuntime
         runtime.observe(runtimeObserver)
+        outboundRuntime.observe(outboundObserver)
         val startupIdentityStore = AndroidDevelopmentIdentityStore()
         if (!startupIdentityStore.exists() && trustRepository.peers().isNotEmpty()) runCatching { trustRepository.clear() }
         pairingClient = AndroidPairingClient(
@@ -106,6 +113,9 @@ class MainActivity : ComponentActivity() {
                 runtime.accept(ReceiveAvailabilityInput.Blocked("notification_permission_denied"))
             }
         }
+        documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) outboundRuntime.prepare(uri)
+        }
         setContent {
             SwiftShareTheme {
                 ReceiveScreen(
@@ -120,6 +130,11 @@ class MainActivity : ComponentActivity() {
                     onApprove = runtime::approve,
                     onReject = runtime::reject,
                     onCancel = runtime::cancelActive,
+                    outbound = outboundState,
+                    onChooseDocument = { documentPicker.launch(arrayOf("*/*")) },
+                    onSelectOutboundPeer = outboundRuntime::selectPeer,
+                    onSendOutbound = outboundRuntime::send,
+                    onCancelOutbound = outboundRuntime::cancel,
                     pairingState = pairingState,
                     pairedPeers = trustRepository.peers().also { peerRevision },
                     onPair = { pairingClient?.start(it) },
@@ -128,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     onUnpair = { peerId ->
                         if (runCatching { trustRepository.remove(peerId) }.getOrDefault(false)) {
                             runtime.unpairActive(peerId)
+                            outboundRuntime.unpair(peerId)
                             peerRevision++
                             runtime.accept(ReceiveAvailabilityInput.PairedPeersChanged)
                         }
@@ -145,17 +161,21 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         runtime.accept(ReceiveAvailabilityInput.AppVisibility(foreground = true))
+        outboundRuntime.startDiscovery()
     }
 
     override fun onStop() {
         if (!isChangingConfigurations) {
             runtime.accept(ReceiveAvailabilityInput.AppVisibility(foreground = false))
+            outboundRuntime.cancel()
+            outboundRuntime.stopDiscovery()
         }
         super.onStop()
     }
 
     override fun onDestroy() {
         runtime.removeObserver(runtimeObserver)
+        outboundRuntime.removeObserver(outboundObserver)
         pairingClient?.close()
         super.onDestroy()
     }
@@ -208,6 +228,11 @@ fun ReceiveScreen(
     onApprove: () -> Unit,
     onReject: () -> Unit,
     onCancel: () -> Unit,
+    outbound: AndroidOutboundSnapshot,
+    onChooseDocument: () -> Unit,
+    onSelectOutboundPeer: (String) -> Unit,
+    onSendOutbound: () -> Unit,
+    onCancelOutbound: () -> Unit,
     pairingState: AndroidPairingState,
     pairedPeers: List<StoredPeer>,
     onPair: (String) -> Unit,
@@ -246,6 +271,14 @@ fun ReceiveScreen(
             PairingContent(
                 pairingState, pairedPeers, onPair, onPairApprove, onPairReject, onUnpair, onApprovalPolicy,
             )
+            OutboundContent(
+                outbound,
+                pairedPeers,
+                onChooseDocument,
+                onSelectOutboundPeer,
+                onSendOutbound,
+                onCancelOutbound,
+            )
             Text("Android SPKI pin", fontWeight = FontWeight.SemiBold)
             Text(localPin, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
             ReceiveStateContent(state, onApprove, onReject, onCancel)
@@ -262,6 +295,82 @@ fun ReceiveScreen(
             }
         }
     }
+}
+
+@Composable
+private fun OutboundContent(
+    state: AndroidOutboundSnapshot,
+    peers: List<StoredPeer>,
+    onChooseDocument: () -> Unit,
+    onSelectPeer: (String) -> Unit,
+    onSend: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Send Android → Mac", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        if (state.preparing) {
+            Text("Preparing document…")
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else if (state.draft == null) {
+            Text("Choose one document. SwiftShare keeps read access so the reviewed source survives recreation.")
+        } else {
+            Text(state.draft.displayName, fontWeight = FontWeight.SemiBold)
+            Text("Items: 1", style = MaterialTheme.typography.bodySmall)
+            Text("${state.draft.byteCount} bytes · ${state.draft.mediaType}", style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(onClick = onChooseDocument, enabled = !state.active) { Text("Choose document") }
+        if (peers.isEmpty()) {
+            Text("Pair a Mac before sending.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("Destination Mac", fontWeight = FontWeight.SemiBold)
+            peers.forEach { peer ->
+                val online = peer.keyIdHex in state.onlinePeerIds
+                OutlinedButton(
+                    onClick = { onSelectPeer(peer.keyIdHex) },
+                    enabled = online && !state.active,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("${if (state.selectedPeerId == peer.keyIdHex) "✓ " else ""}${peer.displayName} · ${if (online) "Online" else "Offline"}")
+                }
+            }
+        }
+        state.phase?.let { phase ->
+            Text(phase.outboundLabel(), fontWeight = FontWeight.SemiBold)
+            if (state.totalBytes > 0 && phase in setOf(
+                    TransferActivityPhase.TRANSFERRING,
+                    TransferActivityPhase.VERIFYING,
+                    TransferActivityPhase.COMMITTING,
+                )
+            ) {
+                LinearProgressIndicator(
+                    progress = { (state.transferredBytes.toFloat() / state.totalBytes).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("${state.transferredBytes} / ${state.totalBytes} bytes", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        state.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = onSend,
+                enabled = state.draft != null && state.selectedPeerId in state.onlinePeerIds && !state.active,
+            ) { Text("Send to Mac") }
+            if (state.active && !state.preparing) OutlinedButton(onClick = onCancel) { Text("Cancel") }
+        }
+    }
+}
+
+private fun TransferActivityPhase.outboundLabel(): String = when (this) {
+    TransferActivityPhase.PREPARING -> "Preparing"
+    TransferActivityPhase.CONNECTING -> "Connecting to Mac"
+    TransferActivityPhase.AWAITING_APPROVAL -> "Waiting for approval on Mac"
+    TransferActivityPhase.TRANSFERRING -> "Sending"
+    TransferActivityPhase.VERIFYING -> "Mac is verifying"
+    TransferActivityPhase.COMMITTING -> "Mac is committing"
+    TransferActivityPhase.COMPLETED -> "Sent successfully"
+    TransferActivityPhase.REJECTED -> "Declined on Mac"
+    TransferActivityPhase.CANCELLED -> "Cancelled"
+    TransferActivityPhase.FAILED -> "Transfer failed"
 }
 
 @Composable
@@ -435,6 +544,11 @@ private fun ReceiveScreenPreview() {
             onApprove = {},
             onReject = {},
             onCancel = {},
+            outbound = AndroidOutboundSnapshot(),
+            onChooseDocument = {},
+            onSelectOutboundPeer = {},
+            onSendOutbound = {},
+            onCancelOutbound = {},
             pairingState = AndroidPairingState.Idle,
             pairedPeers = emptyList(),
             onPair = {},

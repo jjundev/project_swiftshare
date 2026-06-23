@@ -405,10 +405,8 @@ final class MacFixedEndpointSender: @unchecked Sendable {
     private func session() throws -> OutboundTransferSession {
         try sessionLock.withLock {
             if let outboundSession { return outboundSession }
-            let identity = try identityStore.loadIdentity()
-            let localDeviceID = try identityStore.spkiPin(for: identity)
             let value = OutboundTransferSession(
-                scheduler: TransferSessionScheduler(localDeviceID: localDeviceID),
+                scheduler: try MacSharedTransferScheduler.shared.value(),
                 locator: MacOutboundPeerLocator()
             )
             outboundSession = value

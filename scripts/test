@@ -7,7 +7,18 @@ SCOPE=${1:-all}
 
 test_macos() {
   "$ROOT/scripts/doctor" macos
-  "$ROOT/scripts/build" macos
+  host_arch=$(uname -m)
+  xcodebuild \
+    -project "$ROOT/macos/SwiftShare.xcodeproj" \
+    -scheme SwiftShare \
+    -configuration Debug \
+    -destination "platform=macOS,arch=$host_arch" \
+    -derivedDataPath "$ROOT/.build/xcode-tests" \
+    CODE_SIGNING_ALLOWED=YES \
+    CODE_SIGN_IDENTITY=- \
+    build-for-testing
+  xcrun xctest \
+    "$ROOT/.build/xcode-tests/Build/Products/Debug/SwiftShareDomainTests.xctest"
   swift test --package-path "$ROOT/macos" --scratch-path "$ROOT/.build/swiftpm"
 }
 

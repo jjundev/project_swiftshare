@@ -152,12 +152,15 @@ class SwiftShareApplication : Application() {
         private set
     lateinit var receiveRuntime: ReceiveRuntime
         private set
+    lateinit var outboundRuntime: AndroidOutboundRuntime
+        private set
 
     override fun onCreate() {
         super.onCreate()
         trustRepository = AndroidTrustRepository(this)
         availabilityPolicies = AvailabilityPolicyRepository(this)
         receiveRuntime = ReceiveRuntime(this, trustRepository, availabilityPolicies)
+        outboundRuntime = AndroidOutboundRuntime(this, trustRepository, receiveRuntime.scheduler())
     }
 }
 
@@ -209,6 +212,12 @@ class ReceiveRuntime(
 
     fun snapshot(): ReceiveRuntimeSnapshot = snapshot
 
+    @Synchronized fun scheduler(): TransferSessionScheduler {
+        return transferScheduler ?: TransferSessionScheduler(identityStore.loadOrCreate().spkiSha256).also {
+            transferScheduler = it
+        }
+    }
+
     fun observe(observer: (ReceiveRuntimeSnapshot) -> Unit) {
         observers += observer
         main.post { observer(snapshot) }
@@ -250,10 +259,7 @@ class ReceiveRuntime(
         }
         publishAvailability(AvailabilityRuntimeState.Starting)
         try {
-            val localIdentity = identityStore.loadOrCreate()
-            val scheduler = transferScheduler ?: TransferSessionScheduler(localIdentity.spkiSha256).also {
-                transferScheduler = it
-            }
+            val scheduler = scheduler()
             val tls = DevelopmentTlsContextFactory(identityStore).create(trustRepository)
             val generation = ++nextServerGeneration
             val value = FixedEndpointReceiveServer(
