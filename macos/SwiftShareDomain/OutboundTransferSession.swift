@@ -48,13 +48,19 @@ public protocol OutboundTransferPayload: Sendable {
 public struct OutboundTransferIntent: Sendable {
     public let peerID: Data
     public let endpointHint: String?
-    public let payload: any OutboundTransferPayload
+    public let payloads: [any OutboundTransferPayload]
 
-    public init(peerID: Data, endpointHint: String? = nil, payload: any OutboundTransferPayload) {
+    public init(peerID: Data, endpointHint: String? = nil, payloads: [any OutboundTransferPayload]) {
         precondition(peerID.count == 32)
+        precondition(!payloads.isEmpty && payloads.count <= transferMaxBatchItems)
         self.peerID = peerID
         self.endpointHint = endpointHint
-        self.payload = payload
+        self.payloads = payloads
+    }
+
+    /// Convenience for a single-item Transfer Session.
+    public init(peerID: Data, endpointHint: String? = nil, payload: any OutboundTransferPayload) {
+        self.init(peerID: peerID, endpointHint: endpointHint, payloads: [payload])
     }
 }
 
@@ -109,6 +115,9 @@ public actor OutboundTransferSession {
         var channel: (any OutboundTransferRecordChannel)?
         var version: NegotiatedProtocolVersion?
         var cancellationReason: String?
+        var committedItems = 0
+        var committedBytes: UInt64 = 0
+        var committedArtifacts: [CommittedArtifact] = []
     }
 
     private let scheduler: TransferSessionScheduler
@@ -134,12 +143,15 @@ public actor OutboundTransferSession {
         events: any TransferEventSink
     ) async -> RoleTransferOutcome {
         let sessionID = UUID()
+        let totalBytes = intent.payloads.reduce(UInt64(0)) { $0 + $1.byteCount }
+        let totalItems = intent.payloads.count
         guard let lease = await scheduler.reserveOutbound(peerID: intent.peerID, sessionID: sessionID) else {
             return await finish(
                 result: .failed,
                 phase: .failed,
                 failure: TransferFailure(category: .busy, code: "device_busy"),
-                payload: intent.payload,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
                 events: events
             )
         }
@@ -149,14 +161,29 @@ public actor OutboundTransferSession {
         do {
             outcome = try await run(intent, sessionID: sessionID, lease: lease, events: events)
         } catch {
+            let committedArtifacts = current?.committedArtifacts ?? []
+            let committedItems = current?.committedItems ?? 0
+            let committedBytes = current?.committedBytes ?? 0
             if let reason = current?.cancellationReason ?? ((error is CancellationError) ? "user_cancelled" : nil) {
-                outcome = await finishCancellation(reason: reason, payload: intent.payload, events: events)
+                outcome = await finishCancellation(
+                    reason: reason,
+                    totalBytes: totalBytes,
+                    totalItems: totalItems,
+                    committedArtifacts: committedArtifacts,
+                    committedItems: committedItems,
+                    committedBytes: committedBytes,
+                    events: events
+                )
             } else if let failure = error as? TransferExecutionError {
                 outcome = await finish(
                     result: .failed,
                     phase: .failed,
                     failure: TransferFailure(category: failure.category, code: failure.code),
-                    payload: intent.payload,
+                    committedArtifacts: committedArtifacts,
+                    totalBytes: totalBytes,
+                    totalItems: totalItems,
+                    committedItems: committedItems,
+                    committedBytes: committedBytes,
                     events: events
                 )
             } else {
@@ -164,7 +191,11 @@ public actor OutboundTransferSession {
                     result: .failed,
                     phase: .failed,
                     failure: TransferFailure(category: .protocol, code: "unexpected_failure"),
-                    payload: intent.payload,
+                    committedArtifacts: committedArtifacts,
+                    totalBytes: totalBytes,
+                    totalItems: totalItems,
+                    committedItems: committedItems,
+                    committedBytes: committedBytes,
                     events: events
                 )
             }
@@ -200,9 +231,11 @@ public actor OutboundTransferSession {
         lease: SessionLease,
         events: any TransferEventSink
     ) async throws -> RoleTransferOutcome {
-        let payload = intent.payload
-        await events.emit(event(.connecting, payload: payload))
-        try await validate(payload)
+        let payloads = intent.payloads
+        let totalItems = payloads.count
+        let totalBytes = payloads.reduce(UInt64(0)) { $0 + $1.byteCount }
+        await events.emit(event(.connecting, totalBytes: totalBytes, totalItems: totalItems))
+        for payload in payloads { try await validate(payload) }
 
         let locator = self.locator
         let deadlines = self.deadlines
@@ -265,7 +298,8 @@ public actor OutboundTransferSession {
                 result: result,
                 phase: result == .rejected ? .rejected : .failed,
                 failure: failure,
-                payload: payload,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
                 events: events
             )
         }
@@ -282,7 +316,7 @@ public actor OutboundTransferSession {
         current?.version = negotiated.version
         try throwIfCancelled()
 
-        let manifest = TransferControlMessage.manifest([
+        let manifest = TransferControlMessage.manifest(payloads.map { payload in
             TransferFileEntry(
                 itemID: payload.itemID,
                 displayName: payload.displayName,
@@ -291,7 +325,7 @@ public actor OutboundTransferSession {
                 mediaType: payload.mediaType,
                 chunkSize: UInt32(negotiated.chunkSize)
             )
-        ])
+        })
         try await send(
             channel: location.channel,
             type: .manifest,
@@ -300,7 +334,7 @@ public actor OutboundTransferSession {
             version: negotiated.version
         )
 
-        await events.emit(event(.awaitingApproval, payload: payload))
+        await events.emit(event(.awaitingApproval, totalBytes: totalBytes, totalItems: totalItems))
         let approvalRecord = try await timed(
             timeout: timeouts.approval,
             category: .approval,
@@ -311,10 +345,13 @@ public actor OutboundTransferSession {
         if approvalRecord.header.type == .terminalResult {
             return try await remoteTerminal(
                 approvalRecord,
-                payload: payload,
-                transferredBytes: 0,
                 sessionID: sessionID,
                 version: negotiated.version,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: 0,
+                committedBytes: 0,
+                committedArtifacts: [],
                 events: events,
                 allowCompletion: false
             )
@@ -329,119 +366,183 @@ public actor OutboundTransferSession {
                 result: .rejected,
                 phase: .rejected,
                 failure: TransferFailure(category: .approval, code: reason.isEmpty ? "user_rejected" : reason),
-                payload: payload,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
                 events: events
             )
         }
 
-        try await validate(payload)
-        let stream: any OutboundTransferPayloadStream
-        do {
-            stream = try await payload.openStream()
-        } catch {
-            throw TransferExecutionError(category: .source, code: "source_changed")
-        }
+        // Stream each item in manifest order. Already-committed items are retained on
+        // failure; the receiver acknowledges every non-final item with ItemCommitted and
+        // closes the batch with one session TerminalResult after the final item.
+        var committedItems = 0
+        var committedBytes: UInt64 = 0
+        var committedArtifacts: [CommittedArtifact] = []
+        for (index, payload) in payloads.enumerated() {
+            let isLast = index == payloads.count - 1
+            try await validate(payload)
+            let stream: any OutboundTransferPayloadStream
+            do {
+                stream = try await payload.openStream()
+            } catch {
+                throw TransferExecutionError(category: .source, code: "source_changed")
+            }
 
-        var offset: UInt64 = 0
-        var chunkIndex: UInt32 = 0
-        await events.emit(event(.transferring, payload: payload))
-        do {
-            while let bytes = try await stream.read(upToCount: negotiated.chunkSize), !bytes.isEmpty {
-                try Task.checkCancellation()
-                try throwIfCancelled()
-                let prelude = TransferChunkPrelude(
-                    itemID: payload.itemID,
-                    chunkIndex: chunkIndex,
-                    offset: offset,
-                    dataLength: UInt32(bytes.count),
-                    sha256: Data(SHA256.hash(data: bytes))
-                )
-                try await send(
-                    channel: location.channel,
-                    type: .chunk,
-                    payload: prelude.encoded() + bytes,
-                    sessionID: sessionID,
-                    version: negotiated.version
-                )
-                let progressRecord = try await timed(
+            var offset: UInt64 = 0
+            var chunkIndex: UInt32 = 0
+            await events.emit(event(
+                .transferring,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: committedItems,
+                committedBytes: committedBytes,
+                currentItemName: payload.displayName
+            ))
+            do {
+                while let bytes = try await stream.read(upToCount: negotiated.chunkSize), !bytes.isEmpty {
+                    try Task.checkCancellation()
+                    try throwIfCancelled()
+                    let prelude = TransferChunkPrelude(
+                        itemID: payload.itemID,
+                        chunkIndex: chunkIndex,
+                        offset: offset,
+                        dataLength: UInt32(bytes.count),
+                        sha256: Data(SHA256.hash(data: bytes))
+                    )
+                    try await send(
+                        channel: location.channel,
+                        type: .chunk,
+                        payload: prelude.encoded() + bytes,
+                        sessionID: sessionID,
+                        version: negotiated.version
+                    )
+                    let progressRecord = try await timed(
+                        timeout: timeouts.idle,
+                        category: .network,
+                        timeoutCode: "progress_timeout"
+                    ) {
+                        try await location.channel.receiveRecord()
+                    }
+                    if progressRecord.header.type == .terminalResult {
+                        await stream.close()
+                        return try await remoteTerminal(
+                            progressRecord,
+                            sessionID: sessionID,
+                            version: negotiated.version,
+                            totalBytes: totalBytes,
+                            totalItems: totalItems,
+                            committedItems: committedItems,
+                            committedBytes: committedBytes,
+                            committedArtifacts: committedArtifacts,
+                            events: events,
+                            allowCompletion: false
+                        )
+                    }
+                    try require(progressRecord, sessionID: sessionID, type: .progress, version: negotiated.version)
+                    let progress = try decode(type: .progress, data: progressRecord.payload)
+                    guard case .progress(let itemID, let verified, _, _) = progress,
+                          itemID == payload.itemID,
+                          verified == offset + UInt64(bytes.count)
+                    else { throw TransferExecutionError(category: .protocol, code: "invalid_progress") }
+                    offset = verified
+                    chunkIndex += 1
+                    await events.emit(event(
+                        .transferring,
+                        totalBytes: totalBytes,
+                        totalItems: totalItems,
+                        committedItems: committedItems,
+                        committedBytes: committedBytes,
+                        itemTransferred: offset,
+                        currentItemName: payload.displayName
+                    ))
+                }
+                await stream.close()
+            } catch {
+                await stream.close()
+                if error is CancellationError { throw error }
+                if let failure = error as? TransferExecutionError { throw failure }
+                throw TransferExecutionError(category: .source, code: "source_read_failed")
+            }
+
+            guard offset == payload.byteCount else {
+                throw TransferExecutionError(category: .source, code: "source_changed")
+            }
+            try await send(
+                channel: location.channel,
+                type: .senderFinished,
+                payload: try encode(.senderFinished(itemID: payload.itemID, byteCount: payload.byteCount, sha256: payload.sha256)),
+                sessionID: sessionID,
+                version: negotiated.version
+            )
+            await events.emit(event(
+                .verifying,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: committedItems,
+                committedBytes: committedBytes,
+                itemTransferred: offset,
+                currentItemName: payload.displayName
+            ))
+
+            // Await this item's acknowledgement: ItemCommitted (more items follow) or the
+            // session TerminalResult (final item, or early termination).
+            acknowledgement: while true {
+                let record = try await timed(
                     timeout: timeouts.idle,
                     category: .network,
-                    timeoutCode: "progress_timeout"
+                    timeoutCode: "terminal_timeout"
                 ) {
                     try await location.channel.receiveRecord()
                 }
-                if progressRecord.header.type == .terminalResult {
-                    await stream.close()
+                switch record.header.type {
+                case .cancel:
+                    throw CancellationError()
+                case .terminalResult:
                     return try await remoteTerminal(
-                        progressRecord,
-                        payload: payload,
-                        transferredBytes: offset,
+                        record,
                         sessionID: sessionID,
                         version: negotiated.version,
+                        totalBytes: totalBytes,
+                        totalItems: totalItems,
+                        committedItems: committedItems,
+                        committedBytes: committedBytes,
+                        committedArtifacts: committedArtifacts,
                         events: events,
-                        allowCompletion: false
+                        allowCompletion: isLast
                     )
+                case .itemCommitted:
+                    guard !isLast else {
+                        throw TransferExecutionError(category: .protocol, code: "unexpected_item_committed")
+                    }
+                    try require(record, sessionID: sessionID, type: .itemCommitted, version: negotiated.version)
+                    let message = try decode(type: .itemCommitted, data: record.payload)
+                    guard case .itemCommitted(let itemID, let artifact) = message, itemID == payload.itemID else {
+                        throw TransferExecutionError(category: .protocol, code: "invalid_item_committed")
+                    }
+                    committedItems += 1
+                    committedBytes += payload.byteCount
+                    if !artifact.isEmpty { committedArtifacts.append(CommittedArtifact(id: artifact)) }
+                    current?.committedItems = committedItems
+                    current?.committedBytes = committedBytes
+                    current?.committedArtifacts = committedArtifacts
+                    break acknowledgement
+                default:
+                    continue acknowledgement
                 }
-                try require(progressRecord, sessionID: sessionID, type: .progress, version: negotiated.version)
-                let progress = try decode(type: .progress, data: progressRecord.payload)
-                guard case .progress(let itemID, let verified, _, _) = progress,
-                      itemID == payload.itemID,
-                      verified == offset + UInt64(bytes.count)
-                else { throw TransferExecutionError(category: .protocol, code: "invalid_progress") }
-                offset = verified
-                chunkIndex += 1
-                await events.emit(event(.transferring, payload: payload, transferred: offset, verified: verified))
             }
-            await stream.close()
-        } catch {
-            await stream.close()
-            if error is CancellationError { throw error }
-            if let failure = error as? TransferExecutionError { throw failure }
-            throw TransferExecutionError(category: .source, code: "source_read_failed")
         }
-
-        guard offset == payload.byteCount else {
-            throw TransferExecutionError(category: .source, code: "source_changed")
-        }
-        try await send(
-            channel: location.channel,
-            type: .senderFinished,
-            payload: try encode(.senderFinished(itemID: payload.itemID, byteCount: payload.byteCount, sha256: payload.sha256)),
-            sessionID: sessionID,
-            version: negotiated.version
-        )
-        await events.emit(event(.verifying, payload: payload, transferred: offset, verified: offset))
-
-        while true {
-            let record = try await timed(
-                timeout: timeouts.idle,
-                category: .network,
-                timeoutCode: "terminal_timeout"
-            ) {
-                try await location.channel.receiveRecord()
-            }
-            if record.header.type == .cancel {
-                throw CancellationError()
-            }
-            guard record.header.type == .terminalResult else { continue }
-            return try await remoteTerminal(
-                record,
-                payload: payload,
-                transferredBytes: offset,
-                sessionID: sessionID,
-                version: negotiated.version,
-                events: events,
-                allowCompletion: true
-            )
-        }
+        throw TransferExecutionError(category: .protocol, code: "missing_terminal")
     }
 
     private func remoteTerminal(
         _ record: TransferWireRecord,
-        payload: any OutboundTransferPayload,
-        transferredBytes: UInt64,
         sessionID: UUID,
         version: NegotiatedProtocolVersion,
+        totalBytes: UInt64,
+        totalItems: Int,
+        committedItems: Int,
+        committedBytes: UInt64,
+        committedArtifacts: [CommittedArtifact],
         events: any TransferEventSink,
         allowCompletion: Bool
     ) async throws -> RoleTransferOutcome {
@@ -452,13 +553,16 @@ public actor OutboundTransferSession {
         }
         switch status {
         case .completed where allowCompletion:
+            var artifacts = committedArtifacts
+            if !artifactID.isEmpty { artifacts.append(CommittedArtifact(id: artifactID)) }
             return await finish(
                 result: .completed,
                 phase: .completed,
-                artifactID: artifactID,
-                payload: payload,
-                transferred: transferredBytes,
-                verified: transferredBytes,
+                committedArtifacts: artifacts,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: totalItems,
+                committedBytes: totalBytes,
                 events: events
             )
         case .completed:
@@ -468,7 +572,11 @@ public actor OutboundTransferSession {
                 result: .rejected,
                 phase: .rejected,
                 failure: TransferFailure(category: category ?? .approval, code: code),
-                payload: payload,
+                committedArtifacts: committedArtifacts,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: committedItems,
+                committedBytes: committedBytes,
                 events: events
             )
         case .cancelled:
@@ -476,7 +584,11 @@ public actor OutboundTransferSession {
                 result: .cancelled,
                 phase: .cancelled,
                 failure: TransferFailure(category: category ?? .cancelled, code: code),
-                payload: payload,
+                committedArtifacts: committedArtifacts,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: committedItems,
+                committedBytes: committedBytes,
                 events: events
             )
         case .failed:
@@ -484,7 +596,11 @@ public actor OutboundTransferSession {
                 result: .failed,
                 phase: .failed,
                 failure: TransferFailure(category: category ?? .protocol, code: code),
-                payload: payload,
+                committedArtifacts: committedArtifacts,
+                totalBytes: totalBytes,
+                totalItems: totalItems,
+                committedItems: committedItems,
+                committedBytes: committedBytes,
                 events: events
             )
         }
@@ -492,7 +608,11 @@ public actor OutboundTransferSession {
 
     private func finishCancellation(
         reason: String,
-        payload: any OutboundTransferPayload,
+        totalBytes: UInt64,
+        totalItems: Int,
+        committedArtifacts: [CommittedArtifact],
+        committedItems: Int,
+        committedBytes: UInt64,
         events: any TransferEventSink
     ) async -> RoleTransferOutcome {
         let category: TransferErrorCategory = reason == "peer_unpaired" ? .authentication : .cancelled
@@ -500,7 +620,11 @@ public actor OutboundTransferSession {
             result: .cancelled,
             phase: .cancelled,
             failure: TransferFailure(category: category, code: reason),
-            payload: payload,
+            committedArtifacts: committedArtifacts,
+            totalBytes: totalBytes,
+            totalItems: totalItems,
+            committedItems: committedItems,
+            committedBytes: committedBytes,
             events: events
         )
     }
@@ -509,30 +633,41 @@ public actor OutboundTransferSession {
         result: TransferTerminalResult,
         phase: TransferActivityPhase,
         failure: TransferFailure? = nil,
-        artifactID: String = "",
-        payload: any OutboundTransferPayload,
-        transferred: UInt64 = 0,
-        verified: UInt64 = 0,
+        committedArtifacts: [CommittedArtifact] = [],
+        totalBytes: UInt64,
+        totalItems: Int,
+        committedItems: Int = 0,
+        committedBytes: UInt64 = 0,
         events: any TransferEventSink
     ) async -> RoleTransferOutcome {
-        await events.emit(event(phase, payload: payload, transferred: transferred, verified: verified))
-        let artifacts = result == .completed && !artifactID.isEmpty ? [CommittedArtifact(id: artifactID)] : []
-        return RoleTransferOutcome(result: result, committedArtifacts: artifacts, failure: failure)
+        let completed = phase == .completed
+        await events.emit(event(
+            phase,
+            totalBytes: totalBytes,
+            totalItems: totalItems,
+            committedItems: completed ? totalItems : committedItems,
+            committedBytes: completed ? totalBytes : committedBytes
+        ))
+        return RoleTransferOutcome(result: result, committedArtifacts: committedArtifacts, failure: failure)
     }
 
     private func event(
         _ phase: TransferActivityPhase,
-        payload: any OutboundTransferPayload,
-        transferred: UInt64 = 0,
-        verified: UInt64 = 0
+        totalBytes: UInt64,
+        totalItems: Int,
+        committedItems: Int = 0,
+        committedBytes: UInt64 = 0,
+        itemTransferred: UInt64 = 0,
+        currentItemName: String = ""
     ) -> TransferSessionEvent {
         TransferSessionEvent(
             phase: phase,
-            transferredBytes: transferred,
-            verifiedBytes: verified,
-            totalBytes: payload.byteCount,
-            completedItems: phase == .completed ? 1 : 0,
-            totalItems: 1
+            transferredBytes: committedBytes + itemTransferred,
+            verifiedBytes: committedBytes + itemTransferred,
+            totalBytes: totalBytes,
+            completedItems: committedItems,
+            totalItems: totalItems,
+            currentItemName: currentItemName
         )
     }
 

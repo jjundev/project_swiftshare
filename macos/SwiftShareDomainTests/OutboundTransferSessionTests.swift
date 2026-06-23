@@ -109,8 +109,121 @@ struct OutboundTransferSessionTests {
         #expect(await events.phases == [.connecting, .awaitingApproval, .cancelled])
     }
 
+    @Test("A multi-item batch streams each item and acknowledges per item")
+    func multiItemBatch() async throws {
+        let channel = BatchScriptedOutboundChannel()
+        let events = OutboundEventRecorder()
+        let first = OutboundPayloadStub(itemID: UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!, bytes: Data("ab".utf8))
+        let second = OutboundPayloadStub(itemID: UUID(uuidString: "00000000-0000-0000-0000-0000000000a2")!, bytes: Data("cd".utf8))
+        let session = OutboundTransferSession(
+            scheduler: TransferSessionScheduler(localDeviceID: Self.localID),
+            locator: OutboundLocatorStub(channel: channel),
+            deadlines: ImmediateOutboundDeadlineScheduler()
+        )
+
+        let outcome = await session.execute(
+            OutboundTransferIntent(peerID: Self.peerID, payloads: [first, second]),
+            events: events
+        )
+
+        #expect(outcome.result == .completed)
+        #expect(await channel.sentTypes == [
+            .sessionHello, .manifest, .chunk, .senderFinished, .chunk, .senderFinished,
+        ])
+        #expect(await events.phases == [
+            .connecting, .awaitingApproval,
+            .transferring, .transferring, .verifying,
+            .transferring, .transferring, .verifying,
+            .completed,
+        ])
+        let last = try #require(await events.last)
+        #expect(last.completedItems == 2)
+        #expect(last.totalItems == 2)
+        #expect(last.totalBytes == 4)
+        #expect(last.verifiedBytes == 4)
+        #expect(await first.probe.openCalls == 1)
+        #expect(await second.probe.openCalls == 1)
+    }
+
     private static let localID = Data(repeating: 0x11, count: 32)
     private static let peerID = Data(repeating: 0x22, count: 32)
+}
+
+/// Replies contextually to whatever the sender last transmitted so it can drive a
+/// batch of any length: decision → approval → per-chunk progress → per-item ack.
+private actor BatchScriptedOutboundChannel: OutboundTransferRecordChannel {
+    struct Sent: Sendable { let type: TransferRecordType; let payload: Data; let sessionID: UUID }
+    private var sent: [Sent] = []
+    private var manifestItemIDs: [UUID] = []
+
+    var sentTypes: [TransferRecordType] { sent.map(\.type) }
+
+    func sendRecord(
+        type: TransferRecordType,
+        payload: Data,
+        sessionID: UUID,
+        protocolMajor: UInt16,
+        protocolMinor: UInt16
+    ) {
+        sent.append(Sent(type: type, payload: payload, sessionID: sessionID))
+    }
+
+    func receiveRecord() throws -> TransferWireRecord {
+        let sessionID = try #require(sent.first?.sessionID)
+        let last = try #require(sent.last)
+        switch last.type {
+        case .sessionHello:
+            return record(.sessionDecision, SessionBootstrapCodec.encode(.accepted(SessionOffer.default.negotiatedForTests)), sessionID, major: 0)
+        case .manifest:
+            if case .manifest(let entries) = try TransferControlCodec.decode(type: .manifest, data: last.payload) {
+                manifestItemIDs = entries.map(\.itemID)
+            }
+            return try record(.approval, TransferControlCodec.encode(.approval(accepted: true, reasonCode: "")), sessionID)
+        case .chunk:
+            let prelude = try TransferChunkPrelude.decode(last.payload.prefix(transferChunkPreludeSize))
+            return try record(.progress, TransferControlCodec.encode(.progress(
+                itemID: prelude.itemID,
+                verifiedBytes: prelude.offset + UInt64(prelude.dataLength),
+                verifiedChunks: prelude.chunkIndex + 1,
+                phase: .transferring
+            )), sessionID)
+        case .senderFinished:
+            let finished = try TransferControlCodec.decode(type: .senderFinished, data: last.payload)
+            guard case .senderFinished(let itemID, _, _) = finished else {
+                throw TransferProtocolError.violation("unexpected")
+            }
+            if itemID == manifestItemIDs.last {
+                return try record(.terminalResult, TransferControlCodec.encode(.terminalResult(
+                    status: .completed, errorCategory: nil, errorCode: "", committedArtifactID: ""
+                )), sessionID)
+            }
+            return try record(.itemCommitted, TransferControlCodec.encode(.itemCommitted(
+                itemID: itemID, committedArtifactID: ""
+            )), sessionID)
+        default:
+            throw TransferProtocolError.violation("unexpected")
+        }
+    }
+
+    func close() async {}
+
+    private func record(
+        _ type: TransferRecordType,
+        _ payload: Data,
+        _ sessionID: UUID,
+        major: UInt16 = 1
+    ) -> TransferWireRecord {
+        TransferWireRecord(
+            header: TransferRecordHeader(
+                type: type,
+                payloadLength: payload.count,
+                sessionID: sessionID,
+                protocolMajor: major,
+                protocolMinor: 0
+            ),
+            payload: payload
+        )
+    }
 }
 
 private actor OutboundPayloadProbe {
@@ -121,7 +234,7 @@ private actor OutboundPayloadProbe {
 }
 
 private struct OutboundPayloadStub: OutboundTransferPayload {
-    let itemID = UUID(uuidString: "00000000-0000-0000-0000-000000000042")!
+    let itemID: UUID
     let displayName = "report.txt"
     let byteCount: UInt64
     let sha256: Data
@@ -129,7 +242,8 @@ private struct OutboundPayloadStub: OutboundTransferPayload {
     let bytes: Data
     let probe = OutboundPayloadProbe()
 
-    init(bytes: Data = Data("abc".utf8)) {
+    init(itemID: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000042")!, bytes: Data = Data("abc".utf8)) {
+        self.itemID = itemID
         self.bytes = bytes
         byteCount = UInt64(bytes.count)
         sha256 = Data(SHA256.hash(data: bytes))
@@ -176,6 +290,7 @@ private struct ImmediateOutboundDeadlineScheduler: TransferDeadlineScheduling {
 private actor OutboundEventRecorder: TransferEventSink {
     private var events: [TransferSessionEvent] = []
     var phases: [TransferActivityPhase] { events.map(\.phase) }
+    var last: TransferSessionEvent? { events.last }
     func emit(_ event: TransferSessionEvent) { events.append(event) }
 }
 

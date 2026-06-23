@@ -82,6 +82,35 @@ class TransferWireTest {
     }
 
     @Test
+    fun `Kotlin matches the batch manifest and ItemCommitted golden vectors`() {
+        val controls = fixture.getJSONObject("control_messages")
+        val item1 = UUID.fromString(fixture.getString("item_id"))
+        val item2 = UUID.fromString(fixture.getString("item_id_2"))
+        val digest = fixture.getString("sha256_hex").hexToByteArray()
+
+        val batch = TransferManifest(
+            listOf(
+                TransferFileEntry(item1, "report.txt", 3, digest, "text/plain", TRANSFER_CHUNK_TARGET),
+                TransferFileEntry(item2, "second.txt", 5, digest, "text/plain", TRANSFER_CHUNK_TARGET),
+            ),
+        )
+        val batchBytes = controls.getString("manifest_batch_hex").hexToByteArray()
+        assertArrayEquals(batchBytes, TransferControlCodec.encode(batch))
+        val decodedBatch = TransferControlCodec.decode(TransferRecordType.MANIFEST, batchBytes) as TransferManifest
+        assertEquals(2, decodedBatch.entries.size)
+        assertEquals(item2, decodedBatch.entries[1].itemId)
+        assertEquals("second.txt", decodedBatch.entries[1].displayName)
+
+        val committed = TransferItemCommitted(item1, "content://media/42")
+        val committedBytes = controls.getString("item_committed_hex").hexToByteArray()
+        assertArrayEquals(committedBytes, TransferControlCodec.encode(committed))
+        assertEquals(
+            committed,
+            TransferControlCodec.decode(TransferRecordType.ITEM_COMMITTED, committedBytes),
+        )
+    }
+
+    @Test
     fun `incremental parser handles fragmented and coalesced records`() {
         val sessionId = UUID.fromString(fixture.getString("session_id"))
         val firstPayload = fixture.getJSONObject("control_messages").getString("approval_hex").hexToByteArray()

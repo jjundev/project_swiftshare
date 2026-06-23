@@ -12,6 +12,11 @@ const val TRANSFER_CONTROL_LIMIT = 256 * 1024
 const val TRANSFER_RECORD_LIMIT = 16 * 1024 * 1024
 const val TRANSFER_BOOTSTRAP_LIMIT = 64 * 1024
 
+/** Maximum number of items one Manifest (one Transfer Session batch) may carry. */
+const val TRANSFER_MAX_BATCH_ITEMS = 512
+/** Maximum aggregate byte count one Manifest batch may declare. */
+const val TRANSFER_MAX_BATCH_BYTES = 64L * 1024 * 1024 * 1024
+
 enum class TransferRecordType(val code: Int) {
     MANIFEST(1),
     APPROVAL(2),
@@ -20,6 +25,7 @@ enum class TransferRecordType(val code: Int) {
     CANCEL(5),
     TERMINAL_RESULT(6),
     CHUNK(7),
+    ITEM_COMMITTED(8),
     SESSION_HELLO(240),
     SESSION_DECISION(241),
     ;
@@ -213,6 +219,10 @@ data class TransferSenderFinished(
     val byteCount: Long,
     val sha256: ByteArray,
 ) : TransferControlMessage
+data class TransferItemCommitted(
+    val itemId: UUID,
+    val committedArtifactId: String = "",
+) : TransferControlMessage
 data class TransferCancel(val reasonCode: String) : TransferControlMessage
 enum class WireTerminalStatus(val code: Int) { COMPLETED(1), REJECTED(2), CANCELLED(3), FAILED(4) }
 enum class TransferErrorCategory(val code: Int) {
@@ -246,6 +256,10 @@ object TransferControlCodec {
             variable(2, message.byteCount)
             bytes(3, message.sha256)
         }.toByteArray()
+        is TransferItemCommitted -> ProtoWriter().apply {
+            bytes(1, message.itemId.toBytes())
+            if (message.committedArtifactId.isNotEmpty()) string(2, message.committedArtifactId)
+        }.toByteArray()
         is TransferCancel -> ProtoWriter().apply { string(1, message.reasonCode) }.toByteArray()
         is TransferWireTerminalResult -> ProtoWriter().apply {
             variable(1, message.status.code.toLong())
@@ -264,6 +278,7 @@ object TransferControlCodec {
             TransferRecordType.APPROVAL -> decodeApproval(reader)
             TransferRecordType.PROGRESS -> decodeProgress(reader)
             TransferRecordType.SENDER_FINISHED -> decodeFinished(reader)
+            TransferRecordType.ITEM_COMMITTED -> decodeItemCommitted(reader)
             TransferRecordType.CANCEL -> decodeCancel(reader)
             TransferRecordType.TERMINAL_RESULT -> decodeTerminal(reader)
             TransferRecordType.CHUNK -> error("unreachable")
@@ -287,8 +302,26 @@ object TransferControlCodec {
         reader.fields { field, wire ->
             if (field == 1 && wire == 2) entries += decodeEntry(ProtoReader(reader.bytes())) else reader.skip(wire)
         }
-        if (entries.size != 1) throw TransferProtocolException("manifest_requires_one_file")
+        if (entries.isEmpty() || entries.size > TRANSFER_MAX_BATCH_ITEMS) {
+            throw TransferProtocolException("invalid_manifest_item_count")
+        }
+        if (entries.map { it.itemId }.toSet().size != entries.size) {
+            throw TransferProtocolException("duplicate_manifest_item")
+        }
         return TransferManifest(entries)
+    }
+
+    private fun decodeItemCommitted(reader: ProtoReader): TransferItemCommitted {
+        var id: UUID? = null
+        var artifact = ""
+        reader.fields { field, wire -> when (field) {
+            1 -> id = reader.bytes().toUuid()
+            2 -> artifact = reader.string()
+            else -> reader.skip(wire)
+        } }
+        return TransferItemCommitted(
+            id ?: throw TransferProtocolException("invalid_item_committed"), artifact,
+        )
     }
 
     private fun decodeEntry(reader: ProtoReader): TransferFileEntry {

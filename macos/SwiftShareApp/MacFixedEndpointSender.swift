@@ -363,21 +363,23 @@ final class MacFixedEndpointSender: @unchecked Sendable {
     }
 
     func send(
-        _ file: PreparedMacFile,
+        _ files: [PreparedMacFile],
         peerID: String,
         endpointQR: String?,
         event: @escaping @Sendable (TransferSessionEvent) async -> Void
     ) async -> RoleTransferOutcome {
+        let totalBytes = files.reduce(UInt64(0)) { $0 + $1.byteCount }
         do {
+            guard !files.isEmpty else { throw MacTransferError.invalidFile("Select at least one file to send.") }
             let pin = try peerID.transferHexData
             guard pin.count == 32 else { throw MacTransferError.invalidPin }
             let session = try session()
             return await session.execute(
-                OutboundTransferIntent(peerID: pin, endpointHint: endpointQR, payload: file),
+                OutboundTransferIntent(peerID: pin, endpointHint: endpointQR, payloads: files),
                 events: MacTransferEventSink(handler: event)
             )
         } catch {
-            await event(TransferSessionEvent(phase: .failed, totalBytes: file.byteCount))
+            await event(TransferSessionEvent(phase: .failed, totalBytes: totalBytes, totalItems: files.count))
             let failure: TransferFailure
             switch error as? MacTransferError {
             case .invalidPin:
@@ -392,6 +394,25 @@ final class MacFixedEndpointSender: @unchecked Sendable {
                 failure: failure
             )
         }
+    }
+
+    /// Normalizes a native selection (multi-file panel or drag-and-drop) into a bounded
+    /// batch: regular files are prepared and hashed; unreadable, folder, or symlink sources
+    /// are rejected up front and reported so the receiver never sees them.
+    func prepareBatch(_ urls: [URL]) async -> (accepted: [PreparedMacFile], rejected: [String]) {
+        var accepted: [PreparedMacFile] = []
+        var rejected: [String] = []
+        for url in urls.prefix(transferMaxBatchItems) {
+            do {
+                accepted.append(try await prepare(url))
+            } catch {
+                rejected.append(url.lastPathComponent)
+            }
+        }
+        if urls.count > transferMaxBatchItems {
+            rejected.append("\(urls.count - transferMaxBatchItems) more over the \(transferMaxBatchItems)-item limit")
+        }
+        return (accepted, rejected)
     }
 
     func cancelActive(reasonCode: String, peerID: String? = nil) {
@@ -496,10 +517,15 @@ final class MacTransferModel: ObservableObject {
     @Published private(set) var selectedPeerName: String?
     @Published private(set) var onlinePeerIDs: Set<String> = []
     @Published private(set) var localPin = ""
-    @Published private(set) var preparedFile: PreparedMacFile?
+    @Published private(set) var preparedFiles: [PreparedMacFile] = []
+    @Published private(set) var rejectedItems: [String] = []
     @Published private(set) var phase: TransferActivityPhase?
     @Published private(set) var verifiedBytes: UInt64 = 0
-    @Published private(set) var statusMessage = "Select one file to begin."
+    @Published private(set) var totalBytes: UInt64 = 0
+    @Published private(set) var completedItems = 0
+    @Published private(set) var totalItems = 0
+    @Published private(set) var currentItemName = ""
+    @Published private(set) var statusMessage = "Drag files here or choose files to begin."
     @Published private(set) var errorMessage: String?
 
     private let sender = MacFixedEndpointSender()
@@ -513,50 +539,81 @@ final class MacTransferModel: ObservableObject {
     }
 
     var canSend: Bool {
-        preparedFile != nil && selectedPeerID != nil && task == nil
+        !preparedFiles.isEmpty && selectedPeerID != nil && task == nil
     }
 
+    var itemCount: Int { preparedFiles.count }
+    var batchByteCount: UInt64 { preparedFiles.reduce(0) { $0 + $1.byteCount } }
     var destinationLabel: String { selectedPeerName ?? "Not selected" }
     func isOnline(_ peerID: String) -> Bool { onlinePeerIDs.contains(peerID) }
     func select(peer: MacStoredPeer) { selectedPeerID = peer.id; selectedPeerName = peer.displayName }
 
-    func selectFile() {
+    /// Multi-file picker entry point (US16).
+    func selectFiles() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        prepare(urls: panel.urls)
+    }
+
+    /// Drag-and-drop entry point (US15).
+    func dropFiles(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        prepare(urls: urls)
+    }
+
+    private func prepare(urls: [URL]) {
+        guard task == nil else { return }
         task?.cancel()
         phase = .preparing
         statusMessage = "Preparing and hashing…"
         errorMessage = nil
         task = Task {
             defer { task = nil }
-            do {
-                preparedFile = try await sender.prepare(url)
-                phase = nil
-                statusMessage = "Review the destination and payload, then send."
-            } catch {
-                phase = .failed
-                errorMessage = error.localizedDescription
-                statusMessage = "Preparation failed"
-            }
+            let (accepted, rejected) = await sender.prepareBatch(urls)
+            preparedFiles = accepted
+            rejectedItems = rejected
+            totalBytes = batchByteCount
+            totalItems = accepted.count
+            completedItems = 0
+            verifiedBytes = 0
+            phase = nil
+            statusMessage = accepted.isEmpty
+                ? "No supported files in that selection."
+                : "Review the destination and \(accepted.count) item(s), then send."
         }
     }
 
+    func clearSelection() {
+        guard task == nil else { return }
+        preparedFiles = []
+        rejectedItems = []
+        totalBytes = 0
+        totalItems = 0
+        phase = nil
+        statusMessage = "Drag files here or choose files to begin."
+    }
+
     func send() {
-        guard let file = preparedFile, let peerID = selectedPeerID else { return }
+        guard !preparedFiles.isEmpty, let peerID = selectedPeerID else { return }
+        let files = preparedFiles
         errorMessage = nil
         task = Task {
             defer { task = nil }
             let outcome = await sender.send(
-                file,
+                files,
                 peerID: peerID,
                 endpointQR: endpointQR.isEmpty ? nil : endpointQR
             ) { [weak self] event in
                 await MainActor.run {
                     self?.phase = event.phase
                     self?.verifiedBytes = event.verifiedBytes
+                    self?.totalBytes = event.totalBytes
+                    self?.completedItems = event.completedItems
+                    self?.totalItems = event.totalItems
+                    if !event.currentItemName.isEmpty { self?.currentItemName = event.currentItemName }
                     self?.statusMessage = event.phase.userLabel
                 }
             }
