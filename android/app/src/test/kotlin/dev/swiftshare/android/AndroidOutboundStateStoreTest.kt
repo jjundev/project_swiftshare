@@ -25,7 +25,7 @@ class AndroidOutboundStateStoreTest {
     fun `one confirmation admits exactly one send`() {
         val store = AndroidOutboundStateStore(
             AndroidOutboundSnapshot(
-                draft = draft,
+                drafts = listOf(draft),
                 selectedPeerId = peerId,
                 onlinePeerIds = setOf(peerId),
             ),
@@ -38,7 +38,7 @@ class AndroidOutboundStateStoreTest {
 
     @Test
     fun `serialized mutations preserve independent route and transfer fields`() {
-        val store = AndroidOutboundStateStore(AndroidOutboundSnapshot(draft = draft))
+        val store = AndroidOutboundStateStore(AndroidOutboundSnapshot(drafts = listOf(draft)))
 
         store.mutate { it.copy(phase = TransferActivityPhase.TRANSFERRING) }
         store.mutate { it.copy(onlinePeerIds = setOf(peerId)) }
@@ -49,7 +49,7 @@ class AndroidOutboundStateStoreTest {
 
     @Test
     fun `concurrent mutations do not lose updates`() {
-        val store = AndroidOutboundStateStore(AndroidOutboundSnapshot(draft = draft))
+        val store = AndroidOutboundStateStore(AndroidOutboundSnapshot(drafts = listOf(draft)))
         val executor = Executors.newFixedThreadPool(8)
         repeat(1_000) {
             executor.execute {

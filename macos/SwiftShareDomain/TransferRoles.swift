@@ -20,6 +20,7 @@ public struct TransferSessionEvent: Equatable, Sendable {
     public let totalBytes: UInt64
     public let completedItems: Int
     public let totalItems: Int
+    public let currentItemName: String
 
     public init(
         phase: TransferActivityPhase,
@@ -27,7 +28,8 @@ public struct TransferSessionEvent: Equatable, Sendable {
         verifiedBytes: UInt64 = 0,
         totalBytes: UInt64 = 0,
         completedItems: Int = 0,
-        totalItems: Int = 1
+        totalItems: Int = 1,
+        currentItemName: String = ""
     ) {
         self.phase = phase
         self.transferredBytes = transferredBytes
@@ -35,6 +37,7 @@ public struct TransferSessionEvent: Equatable, Sendable {
         self.totalBytes = totalBytes
         self.completedItems = completedItems
         self.totalItems = totalItems
+        self.currentItemName = currentItemName
     }
 }
 

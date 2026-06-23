@@ -28,6 +28,9 @@ Peer, and avoid publishing a partial Android destination.
 - Publish the reserved URI only after Chunk and whole-file verification. Reject,
   cancellation, timeout, disconnect, permission loss, storage failure, or integrity
   failure deletes only the session's pending URI.
+- The Manifest carries one or more ordered items; the single-item path is the N=1
+  case of the same seam. Multi-item batch sequencing, the `ItemCommitted` record, and
+  per-item Commit semantics are specified in ADR 0008.
 
 ## Consequences
 

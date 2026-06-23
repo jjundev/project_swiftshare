@@ -7,6 +7,11 @@ public let transferControlLimit = 256 * 1024
 public let transferRecordLimit = 16 * 1024 * 1024
 public let transferBootstrapLimit = 64 * 1024
 
+/// Maximum number of items one Manifest (one Transfer Session batch) may carry.
+public let transferMaxBatchItems = 512
+/// Maximum aggregate byte count one Manifest batch may declare.
+public let transferMaxBatchBytes: UInt64 = 64 * 1024 * 1024 * 1024
+
 public enum TransferProtocolError: Error, Equatable, Sendable {
     case violation(String)
 }
@@ -19,6 +24,7 @@ public enum TransferRecordType: UInt8, Equatable, Sendable {
     case cancel = 5
     case terminalResult = 6
     case chunk = 7
+    case itemCommitted = 8
     case sessionHello = 240
     case sessionDecision = 241
 
@@ -275,6 +281,7 @@ public enum TransferControlMessage: Equatable, Sendable {
     case approval(accepted: Bool, reasonCode: String)
     case progress(itemID: UUID, verifiedBytes: UInt64, verifiedChunks: UInt32, phase: TransferProgressPhase)
     case senderFinished(itemID: UUID, byteCount: UInt64, sha256: Data)
+    case itemCommitted(itemID: UUID, committedArtifactID: String)
     case cancel(reasonCode: String)
     case terminalResult(
         status: WireTerminalStatus,
@@ -302,6 +309,9 @@ public enum TransferControlCodec {
             writer.bytes(field: 1, value: Data(itemID.transferBytes))
             writer.variable(field: 2, value: byteCount)
             writer.bytes(field: 3, value: digest)
+        case .itemCommitted(let itemID, let artifact):
+            writer.bytes(field: 1, value: Data(itemID.transferBytes))
+            if !artifact.isEmpty { writer.string(field: 2, value: artifact) }
         case .cancel(let reason):
             writer.string(field: 1, value: reason)
         case .terminalResult(let status, let category, let code, let artifact):
@@ -322,6 +332,7 @@ public enum TransferControlCodec {
         case .approval: return try decodeApproval(&reader)
         case .progress: return try decodeProgress(&reader)
         case .senderFinished: return try decodeFinished(&reader)
+        case .itemCommitted: return try decodeItemCommitted(&reader)
         case .cancel: return try decodeCancel(&reader)
         case .terminalResult: return try decodeTerminal(&reader)
         case .chunk: throw TransferProtocolError.violation("chunk_is_not_control")
@@ -352,8 +363,27 @@ public enum TransferControlCodec {
                 entries.append(try decodeEntry(&entryReader))
             } else { try reader.skip(wire: wire) }
         }
-        guard entries.count == 1 else { throw TransferProtocolError.violation("manifest_requires_one_file") }
+        guard !entries.isEmpty, entries.count <= transferMaxBatchItems else {
+            throw TransferProtocolError.violation("invalid_manifest_item_count")
+        }
+        guard Set(entries.map(\.itemID)).count == entries.count else {
+            throw TransferProtocolError.violation("duplicate_manifest_item")
+        }
         return .manifest(entries)
+    }
+
+    private static func decodeItemCommitted(_ reader: inout ProtoReader) throws -> TransferControlMessage {
+        var id: UUID?
+        var artifact = ""
+        while let (field, wire) = try reader.nextField() {
+            switch field {
+            case 1: id = try UUID(transferBytes: reader.bytes())
+            case 2: artifact = try reader.string()
+            default: try reader.skip(wire: wire)
+            }
+        }
+        guard let id else { throw TransferProtocolError.violation("invalid_item_committed") }
+        return .itemCommitted(itemID: id, committedArtifactID: artifact)
     }
 
     private static func decodeEntry(_ reader: inout ProtoReader) throws -> TransferFileEntry {

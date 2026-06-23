@@ -45,9 +45,15 @@ interface OutboundTransferPayload {
 
 data class OutboundTransferIntent(
     val peerId: ByteArray,
-    val payload: OutboundTransferPayload,
+    val payloads: List<OutboundTransferPayload>,
 ) {
-    init { require(peerId.size == 32) }
+    init {
+        require(peerId.size == 32)
+        require(payloads.isNotEmpty() && payloads.size <= TRANSFER_MAX_BATCH_ITEMS)
+    }
+
+    /** Convenience for a single-item Transfer Session. */
+    constructor(peerId: ByteArray, payload: OutboundTransferPayload) : this(peerId, listOf(payload))
 }
 
 data class ProductionOutboundTimeoutPolicy(
@@ -69,6 +75,9 @@ class ProductionOutboundTransferSession(
         var channel: OutboundTransferRecordChannel? = null,
         var version: NegotiatedProtocolVersion? = null,
         var cancellationReason: String? = null,
+        var committedItems: Int = 0,
+        var committedBytes: Long = 0,
+        val committedArtifacts: MutableList<CommittedArtifact> = mutableListOf(),
     )
 
     private val lock = Any()
@@ -76,35 +85,54 @@ class ProductionOutboundTransferSession(
 
     suspend fun execute(intent: OutboundTransferIntent, events: TransferEventSink): RoleTransferOutcome {
         val sessionId = UUID.randomUUID()
+        val totalBytes = intent.payloads.sumOf { it.byteCount }
+        val totalItems = intent.payloads.size
         val lease = scheduler.reserveOutbound(intent.peerId, sessionId)
             ?: return finish(
                 TransferTerminalResult.FAILED,
                 TransferActivityPhase.FAILED,
-                intent.payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(TransferErrorCategory.BUSY, "device_busy"),
             )
         synchronized(lock) { current = Execution(sessionId, intent.peerId.copyOf()) }
 
+        val progress = { synchronized(lock) { current } }
         val outcome = try {
             run(intent, lease, events)
         } catch (error: OutboundCancelled) {
-            finishCancellation(error.reason, intent.payload, events)
+            val state = progress()
+            finishCancellation(
+                error.reason, totalBytes, totalItems, events,
+                state?.committedArtifacts?.toList() ?: emptyList(),
+                state?.committedItems ?: 0, state?.committedBytes ?: 0,
+            )
         } catch (error: TransferExecutionException) {
+            val state = progress()
             finish(
                 TransferTerminalResult.FAILED,
                 TransferActivityPhase.FAILED,
-                intent.payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(error.category, error.errorCode),
+                committedArtifacts = state?.committedArtifacts?.toList() ?: emptyList(),
+                committedItems = state?.committedItems ?: 0,
+                committedBytes = state?.committedBytes ?: 0,
             )
         } catch (_: Exception) {
+            val state = progress()
             finish(
                 TransferTerminalResult.FAILED,
                 TransferActivityPhase.FAILED,
-                intent.payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(TransferErrorCategory.PROTOCOL, "unexpected_failure"),
+                committedArtifacts = state?.committedArtifacts?.toList() ?: emptyList(),
+                committedItems = state?.committedItems ?: 0,
+                committedBytes = state?.committedBytes ?: 0,
             )
         }
 
@@ -141,9 +169,11 @@ class ProductionOutboundTransferSession(
         lease: SessionLease,
         events: TransferEventSink,
     ): RoleTransferOutcome {
-        val payload = intent.payload
-        events.emit(event(TransferActivityPhase.CONNECTING, payload))
-        validate(payload)
+        val payloads = intent.payloads
+        val totalItems = payloads.size
+        val totalBytes = payloads.sumOf { it.byteCount }
+        events.emit(event(TransferActivityPhase.CONNECTING, totalBytes, totalItems))
+        payloads.forEach { validate(it) }
         val location = timed(timeouts.locatingMillis, TransferErrorCategory.DISCOVERY, "peer_unavailable") {
             locator.locate(intent.peerId)
         }
@@ -181,7 +211,8 @@ class ProductionOutboundTransferSession(
             return finish(
                 result,
                 if (result == TransferTerminalResult.REJECTED) TransferActivityPhase.REJECTED else TransferActivityPhase.FAILED,
-                payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = failure,
             )
@@ -202,26 +233,26 @@ class ProductionOutboundTransferSession(
             TransferRecordType.MANIFEST,
             TransferControlCodec.encode(
                 TransferManifest(
-                    listOf(
+                    payloads.map {
                         TransferFileEntry(
-                            payload.itemId,
-                            payload.displayName,
-                            payload.byteCount,
-                            payload.sha256,
-                            payload.mediaType,
+                            it.itemId,
+                            it.displayName,
+                            it.byteCount,
+                            it.sha256,
+                            it.mediaType,
                             negotiated.chunkSize,
-                        ),
-                    ),
+                        )
+                    },
                 ),
             ),
             negotiated.version,
         )
-        events.emit(event(TransferActivityPhase.AWAITING_APPROVAL, payload))
+        events.emit(event(TransferActivityPhase.AWAITING_APPROVAL, totalBytes, totalItems))
         val approvalRecord = timed(timeouts.approvalMillis, TransferErrorCategory.APPROVAL, "approval_timeout") {
             location.channel.receiveRecord()
         }
         if (approvalRecord.header.type == TransferRecordType.TERMINAL_RESULT) {
-            return remoteTerminal(approvalRecord, payload, 0, negotiated.version, events, false)
+            return remoteTerminal(approvalRecord, totalBytes, totalItems, 0, 0, emptyList(), negotiated.version, events, false)
         }
         requireRecord(approvalRecord, TransferRecordType.APPROVAL, negotiated.version)
         val approval = TransferControlCodec.decode(TransferRecordType.APPROVAL, approvalRecord.payload) as? TransferApproval
@@ -229,7 +260,8 @@ class ProductionOutboundTransferSession(
         if (!approval.accepted) return finish(
             TransferTerminalResult.REJECTED,
             TransferActivityPhase.REJECTED,
-            payload,
+            totalBytes,
+            totalItems,
             events,
             failure = TransferFailure(
                 TransferErrorCategory.APPROVAL,
@@ -237,93 +269,143 @@ class ProductionOutboundTransferSession(
             ),
         )
 
-        validate(payload)
-        val stream = try { payload.openStream() } catch (_: Exception) {
-            throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
-        }
-        var offset = 0L
-        var chunkIndex = 0L
-        val streamedDigest = MessageDigest.getInstance("SHA-256")
-        events.emit(event(TransferActivityPhase.TRANSFERRING, payload))
-        try {
-            while (true) {
-                throwIfCancelled()
-                val bytes = stream.read(negotiated.chunkSize) ?: break
-                if (bytes.isEmpty()) continue
-                if (bytes.size > negotiated.chunkSize || offset + bytes.size > payload.byteCount) {
-                    throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
+        // Stream each item in manifest order; the receiver acknowledges every non-final
+        // item with ItemCommitted and closes the batch with one TerminalResult.
+        var committedItems = 0
+        var committedBytes = 0L
+        val committedArtifacts = mutableListOf<CommittedArtifact>()
+        payloads.forEachIndexed { index, payload ->
+            val isLast = index == payloads.lastIndex
+            validate(payload)
+            val stream = try { payload.openStream() } catch (_: Exception) {
+                throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
+            }
+            var offset = 0L
+            var chunkIndex = 0L
+            val streamedDigest = MessageDigest.getInstance("SHA-256")
+            events.emit(event(
+                TransferActivityPhase.TRANSFERRING, totalBytes, totalItems,
+                committedItems, committedBytes, currentItemName = payload.displayName,
+            ))
+            try {
+                while (true) {
+                    throwIfCancelled()
+                    val bytes = stream.read(negotiated.chunkSize) ?: break
+                    if (bytes.isEmpty()) continue
+                    if (bytes.size > negotiated.chunkSize || offset + bytes.size > payload.byteCount) {
+                        throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
+                    }
+                    streamedDigest.update(bytes)
+                    val prelude = TransferChunkPrelude(
+                        payload.itemId,
+                        chunkIndex,
+                        offset,
+                        bytes.size,
+                        MessageDigest.getInstance("SHA-256").digest(bytes),
+                    )
+                    send(location.channel, TransferRecordType.CHUNK, prelude.encode() + bytes, negotiated.version)
+                    val progressRecord = timed(timeouts.idleMillis, TransferErrorCategory.NETWORK, "progress_timeout") {
+                        location.channel.receiveRecord()
+                    }
+                    if (progressRecord.header.type == TransferRecordType.TERMINAL_RESULT) {
+                        runCatching { stream.close() }
+                        return remoteTerminal(
+                            progressRecord, totalBytes, totalItems, committedItems, committedBytes,
+                            committedArtifacts.toList(), negotiated.version, events, false,
+                        )
+                    }
+                    requireRecord(progressRecord, TransferRecordType.PROGRESS, negotiated.version)
+                    val progress = TransferControlCodec.decode(TransferRecordType.PROGRESS, progressRecord.payload) as? TransferProgress
+                        ?: throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_progress")
+                    val expected = offset + bytes.size
+                    if (progress.itemId != payload.itemId || progress.verifiedBytes != expected) {
+                        throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_progress")
+                    }
+                    offset = expected
+                    chunkIndex += 1
+                    events.emit(event(
+                        TransferActivityPhase.TRANSFERRING, totalBytes, totalItems,
+                        committedItems, committedBytes, offset, payload.displayName,
+                    ))
                 }
-                streamedDigest.update(bytes)
-                val prelude = TransferChunkPrelude(
-                    payload.itemId,
-                    chunkIndex,
-                    offset,
-                    bytes.size,
-                    MessageDigest.getInstance("SHA-256").digest(bytes),
-                )
-                send(
-                    location.channel,
-                    TransferRecordType.CHUNK,
-                    prelude.encode() + bytes,
-                    negotiated.version,
-                )
-                val progressRecord = timed(timeouts.idleMillis, TransferErrorCategory.NETWORK, "progress_timeout") {
+            } catch (error: Exception) {
+                runCatching { stream.close() }
+                if (error is OutboundCancelled || error is TransferExecutionException) throw error
+                throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_read_failed")
+            } finally {
+                runCatching { stream.close() }
+            }
+            if (offset != payload.byteCount || !MessageDigest.isEqual(streamedDigest.digest(), payload.sha256)) {
+                runCatching {
+                    location.channel.sendRecord(
+                        TransferRecordType.CANCEL,
+                        TransferControlCodec.encode(TransferCancel("source_changed")),
+                        currentSessionId(),
+                        negotiated.version.major,
+                        negotiated.version.minor,
+                    )
+                }
+                throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
+            }
+            send(
+                location.channel,
+                TransferRecordType.SENDER_FINISHED,
+                TransferControlCodec.encode(TransferSenderFinished(payload.itemId, payload.byteCount, payload.sha256)),
+                negotiated.version,
+            )
+            events.emit(event(
+                TransferActivityPhase.VERIFYING, totalBytes, totalItems,
+                committedItems, committedBytes, offset, payload.displayName,
+            ))
+
+            // Await this item's acknowledgement: ItemCommitted (advance) or TerminalResult.
+            while (true) {
+                val record = timed(timeouts.idleMillis, TransferErrorCategory.NETWORK, "terminal_timeout") {
                     location.channel.receiveRecord()
                 }
-                if (progressRecord.header.type == TransferRecordType.TERMINAL_RESULT) {
-                    return remoteTerminal(progressRecord, payload, offset, negotiated.version, events, false)
+                when (record.header.type) {
+                    TransferRecordType.CANCEL -> throw OutboundCancelled("receiver_cancelled")
+                    TransferRecordType.TERMINAL_RESULT -> return remoteTerminal(
+                        record, totalBytes, totalItems, committedItems, committedBytes,
+                        committedArtifacts.toList(), negotiated.version, events, isLast,
+                    )
+                    TransferRecordType.ITEM_COMMITTED -> {
+                        if (isLast) throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "unexpected_item_committed")
+                        requireRecord(record, TransferRecordType.ITEM_COMMITTED, negotiated.version)
+                        val committed = TransferControlCodec.decode(TransferRecordType.ITEM_COMMITTED, record.payload) as? TransferItemCommitted
+                            ?: throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_item_committed")
+                        if (committed.itemId != payload.itemId) {
+                            throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_item_committed")
+                        }
+                        committedItems += 1
+                        committedBytes += payload.byteCount
+                        if (committed.committedArtifactId.isNotEmpty()) {
+                            committedArtifacts += CommittedArtifact(committed.committedArtifactId)
+                        }
+                        synchronized(lock) {
+                            current?.let {
+                                it.committedItems = committedItems
+                                it.committedBytes = committedBytes
+                                it.committedArtifacts.clear()
+                                it.committedArtifacts.addAll(committedArtifacts)
+                            }
+                        }
+                        break
+                    }
+                    else -> Unit
                 }
-                requireRecord(progressRecord, TransferRecordType.PROGRESS, negotiated.version)
-                val progress = TransferControlCodec.decode(TransferRecordType.PROGRESS, progressRecord.payload) as? TransferProgress
-                    ?: throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_progress")
-                val expected = offset + bytes.size
-                if (progress.itemId != payload.itemId || progress.verifiedBytes != expected) {
-                    throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "invalid_progress")
-                }
-                offset = expected
-                chunkIndex += 1
-                events.emit(event(TransferActivityPhase.TRANSFERRING, payload, offset, offset))
-            }
-        } catch (error: Exception) {
-            if (error is OutboundCancelled || error is TransferExecutionException) throw error
-            throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_read_failed")
-        } finally {
-            runCatching { stream.close() }
-        }
-        if (offset != payload.byteCount || !MessageDigest.isEqual(streamedDigest.digest(), payload.sha256)) {
-            runCatching {
-                location.channel.sendRecord(
-                    TransferRecordType.CANCEL,
-                    TransferControlCodec.encode(TransferCancel("source_changed")),
-                    sessionId,
-                    negotiated.version.major,
-                    negotiated.version.minor,
-                )
-            }
-            throw TransferExecutionException(TransferErrorCategory.SOURCE, "source_changed")
-        }
-        send(
-            location.channel,
-            TransferRecordType.SENDER_FINISHED,
-            TransferControlCodec.encode(TransferSenderFinished(payload.itemId, payload.byteCount, payload.sha256)),
-            negotiated.version,
-        )
-        events.emit(event(TransferActivityPhase.VERIFYING, payload, offset, offset))
-        while (true) {
-            val record = timed(timeouts.idleMillis, TransferErrorCategory.NETWORK, "terminal_timeout") {
-                location.channel.receiveRecord()
-            }
-            if (record.header.type == TransferRecordType.CANCEL) throw OutboundCancelled("receiver_cancelled")
-            if (record.header.type == TransferRecordType.TERMINAL_RESULT) {
-                return remoteTerminal(record, payload, offset, negotiated.version, events, true)
             }
         }
+        throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "missing_terminal")
     }
 
     private suspend fun remoteTerminal(
         record: TransferWireRecord,
-        payload: OutboundTransferPayload,
-        transferredBytes: Long,
+        totalBytes: Long,
+        totalItems: Int,
+        committedItems: Int,
+        committedBytes: Long,
+        committedArtifacts: List<CommittedArtifact>,
         version: NegotiatedProtocolVersion,
         events: TransferEventSink,
         allowCompletion: Boolean,
@@ -335,87 +417,114 @@ class ProductionOutboundTransferSession(
         return when (terminal.status) {
             WireTerminalStatus.COMPLETED -> {
                 if (!allowCompletion) throw TransferExecutionException(TransferErrorCategory.PROTOCOL, "completion_before_commit")
+                val artifacts = committedArtifacts.toMutableList()
+                if (terminal.committedArtifactId.isNotEmpty()) artifacts += CommittedArtifact(terminal.committedArtifactId)
                 finish(
                     TransferTerminalResult.COMPLETED,
                     TransferActivityPhase.COMPLETED,
-                    payload,
+                    totalBytes,
+                    totalItems,
                     events,
-                    transferredBytes,
-                    transferredBytes,
-                    terminal.committedArtifactId.takeIf(String::isNotEmpty),
+                    committedArtifacts = artifacts,
+                    committedItems = totalItems,
+                    committedBytes = totalBytes,
                 )
             }
             WireTerminalStatus.REJECTED -> finish(
                 TransferTerminalResult.REJECTED,
                 TransferActivityPhase.REJECTED,
-                payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(terminal.errorCategory ?: TransferErrorCategory.APPROVAL, terminal.errorCode),
+                committedArtifacts = committedArtifacts,
+                committedItems = committedItems,
+                committedBytes = committedBytes,
             )
             WireTerminalStatus.CANCELLED -> finish(
                 TransferTerminalResult.CANCELLED,
                 TransferActivityPhase.CANCELLED,
-                payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(terminal.errorCategory ?: TransferErrorCategory.CANCELLED, terminal.errorCode),
+                committedArtifacts = committedArtifacts,
+                committedItems = committedItems,
+                committedBytes = committedBytes,
             )
             WireTerminalStatus.FAILED -> finish(
                 TransferTerminalResult.FAILED,
                 TransferActivityPhase.FAILED,
-                payload,
+                totalBytes,
+                totalItems,
                 events,
                 failure = TransferFailure(terminal.errorCategory ?: TransferErrorCategory.PROTOCOL, terminal.errorCode),
+                committedArtifacts = committedArtifacts,
+                committedItems = committedItems,
+                committedBytes = committedBytes,
             )
         }
     }
 
     private suspend fun finishCancellation(
         reason: String,
-        payload: OutboundTransferPayload,
+        totalBytes: Long,
+        totalItems: Int,
         events: TransferEventSink,
+        committedArtifacts: List<CommittedArtifact>,
+        committedItems: Int,
+        committedBytes: Long,
     ): RoleTransferOutcome = finish(
         TransferTerminalResult.CANCELLED,
         TransferActivityPhase.CANCELLED,
-        payload,
+        totalBytes,
+        totalItems,
         events,
         failure = TransferFailure(
             if (reason == "peer_unpaired") TransferErrorCategory.AUTHENTICATION else TransferErrorCategory.CANCELLED,
             reason,
         ),
+        committedArtifacts = committedArtifacts,
+        committedItems = committedItems,
+        committedBytes = committedBytes,
     )
 
     private suspend fun finish(
         result: TransferTerminalResult,
         phase: TransferActivityPhase,
-        payload: OutboundTransferPayload,
+        totalBytes: Long,
+        totalItems: Int,
         events: TransferEventSink,
-        transferred: Long = 0,
-        verified: Long = 0,
-        artifactId: String? = null,
+        committedArtifacts: List<CommittedArtifact> = emptyList(),
+        committedItems: Int = 0,
+        committedBytes: Long = 0,
         failure: TransferFailure? = null,
     ): RoleTransferOutcome {
-        events.emit(event(phase, payload, transferred, verified))
-        return RoleTransferOutcome(
-            result,
-            if (result == TransferTerminalResult.COMPLETED && artifactId != null) {
-                listOf(CommittedArtifact(artifactId))
-            } else emptyList(),
-            failure,
-        )
+        val completed = phase == TransferActivityPhase.COMPLETED
+        events.emit(event(
+            phase, totalBytes, totalItems,
+            if (completed) totalItems else committedItems,
+            if (completed) totalBytes else committedBytes,
+        ))
+        return RoleTransferOutcome(result, committedArtifacts, failure)
     }
 
     private fun event(
         phase: TransferActivityPhase,
-        payload: OutboundTransferPayload,
-        transferred: Long = 0,
-        verified: Long = 0,
+        totalBytes: Long,
+        totalItems: Int,
+        committedItems: Int = 0,
+        committedBytes: Long = 0,
+        itemTransferred: Long = 0,
+        currentItemName: String = "",
     ) = TransferSessionEvent(
-        phase,
-        transferred,
-        verified,
-        payload.byteCount,
-        if (phase == TransferActivityPhase.COMPLETED) 1 else 0,
-        1,
+        phase = phase,
+        transferredBytes = committedBytes + itemTransferred,
+        verifiedBytes = committedBytes + itemTransferred,
+        totalBytes = totalBytes,
+        completedItems = committedItems,
+        totalItems = totalItems,
+        currentItemName = currentItemName,
     )
 
     private suspend fun <T> timed(

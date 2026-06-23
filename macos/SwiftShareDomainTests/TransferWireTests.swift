@@ -85,6 +85,30 @@ struct TransferWireTests {
         }
     }
 
+    @Test("Swift matches the batch manifest and ItemCommitted golden vectors")
+    func batchVectors() throws {
+        let fixture = try Self.fixture
+        let controls = try #require(fixture["control_messages"] as? [String: String])
+        let item1String = try #require(fixture["item_id"] as? String)
+        let item2String = try #require(fixture["item_id_2"] as? String)
+        let item1 = try #require(UUID(uuidString: item1String))
+        let item2 = try #require(UUID(uuidString: item2String))
+        let digest = try #require(fixture["sha256_hex"] as? String).transferHexData
+
+        let batch = TransferControlMessage.manifest([
+            TransferFileEntry(itemID: item1, displayName: "report.txt", byteCount: 3, sha256: digest, mediaType: "text/plain", chunkSize: UInt32(transferChunkTarget)),
+            TransferFileEntry(itemID: item2, displayName: "second.txt", byteCount: 5, sha256: digest, mediaType: "text/plain", chunkSize: UInt32(transferChunkTarget)),
+        ])
+        let batchBytes = try #require(controls["manifest_batch_hex"]).transferHexData
+        #expect(try TransferControlCodec.encode(batch) == batchBytes)
+        #expect(try TransferControlCodec.decode(type: .manifest, data: batchBytes) == batch)
+
+        let committed = TransferControlMessage.itemCommitted(itemID: item1, committedArtifactID: "content://media/42")
+        let committedBytes = try #require(controls["item_committed_hex"]).transferHexData
+        #expect(try TransferControlCodec.encode(committed) == committedBytes)
+        #expect(try TransferControlCodec.decode(type: .itemCommitted, data: committedBytes) == committed)
+    }
+
     @Test("The parser accepts fragmentation and coalescing")
     func fragmentationAndCoalescing() throws {
         let fixture = try Self.fixture

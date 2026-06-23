@@ -20,6 +20,7 @@ data class TransferSessionEvent(
     val totalBytes: Long = 0,
     val completedItems: Int = 0,
     val totalItems: Int = 1,
+    val currentItemName: String = "",
 )
 
 data class TransferFailure(

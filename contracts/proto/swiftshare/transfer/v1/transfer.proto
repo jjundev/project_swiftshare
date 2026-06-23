@@ -44,6 +44,15 @@ message SenderFinished {
   bytes sha256 = 3;
 }
 
+// Sent by the receiver after a non-final batch item is verified and committed,
+// signalling the sender to advance to the next item. The committed_artifact_id is
+// advisory and kept empty on the wire (receiver-side paths remain private); senders
+// must not depend on it. The final item is acknowledged by TerminalResult instead.
+message ItemCommitted {
+  bytes item_id = 1;
+  string committed_artifact_id = 2;
+}
+
 message Cancel {
   string reason_code = 1;
 }

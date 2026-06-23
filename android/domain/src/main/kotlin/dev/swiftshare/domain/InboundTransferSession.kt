@@ -53,6 +53,8 @@ data class InboundTransferSummary(
     val authenticatedSender: String,
     val displayName: String,
     val byteCount: Long,
+    val itemCount: Int = 1,
+    val totalBytes: Long = byteCount,
 )
 
 enum class InboundApprovalDecision {
@@ -72,6 +74,9 @@ data class InboundTransferSessionEvent(
     val verifiedBytes: Long = 0,
     val artifact: CommittedArtifact? = null,
     val failure: TransferFailure? = null,
+    val completedItems: Int = 0,
+    val totalItems: Int = 1,
+    val currentItemName: String = "",
 )
 
 fun interface InboundTransferEventSink {
@@ -116,6 +121,7 @@ class InboundTransferSession(
         var cancellationReason: String? = null,
         var visible: Boolean = false,
         var committed: Boolean = false,
+        val committedArtifacts: MutableList<CommittedArtifact> = mutableListOf(),
     )
 
     private val lock = Any()
@@ -267,18 +273,28 @@ class InboundTransferSession(
         requireRecord(execution, manifestRecord, TransferRecordType.MANIFEST)
         val manifest = decodeControl(TransferRecordType.MANIFEST, manifestRecord.payload) as? TransferManifest
             ?: throw TransferProtocolException("invalid_manifest")
-        if (manifest.entries.size != 1) throw TransferProtocolException("single_payload_required")
-        val entry = manifest.entries.single()
-        if (entry.chunkSize != negotiated.chunkSize) throw TransferProtocolException("negotiated_chunk_size_mismatch")
+        if (manifest.entries.isEmpty()) throw TransferProtocolException("empty_manifest")
+        val totalBytes = manifest.entries.sumOf { it.byteCount }
+        if (totalBytes > TRANSFER_MAX_BATCH_BYTES) throw TransferProtocolException("manifest_too_large")
+        manifest.entries.forEach { entry ->
+            if (entry.chunkSize != negotiated.chunkSize) throw TransferProtocolException("negotiated_chunk_size_mismatch")
+        }
+        val totalItems = manifest.entries.size
         val peer = connection.authorizer.currentPeer() ?: throw InboundAuthenticationFailure("peer_unpaired")
-        val summary = InboundTransferSummary(peer.displayName, entry.displayName, entry.byteCount)
+        val summary = InboundTransferSummary(
+            peer.displayName,
+            manifest.entries.first().displayName,
+            manifest.entries.first().byteCount,
+            totalItems,
+            totalBytes,
+        )
         execution.summary = summary
         execution.visible = true
 
         val decision = if (peer.approvalPolicy == PeerApprovalPolicy.AUTO_ACCEPT) {
             InboundApprovalDecision.ACCEPTED
         } else {
-            emit(execution, summary, TransferActivityPhase.AWAITING_APPROVAL)
+            emit(execution, summary, TransferActivityPhase.AWAITING_APPROVAL, totalItems = totalItems)
             approvalGateway.awaitDecision(summary, timeouts.approvalMillis)
         }
         throwIfCancelled(execution)
@@ -295,122 +311,160 @@ class InboundTransferSession(
         )
         if (!accepted) {
             val failure = TransferFailure(TransferErrorCategory.APPROVAL, rejectionCode)
-            emit(execution, summary, TransferActivityPhase.REJECTED, failure = failure)
+            emit(execution, summary, TransferActivityPhase.REJECTED, failure = failure, totalItems = totalItems)
             return RoleTransferOutcome(TransferTerminalResult.REJECTED, failure = failure)
         }
 
-        val reservation = destination.reserve(entry.displayName, entry.mediaType)
-        execution.reservation = reservation
-        val pendingOutput = try {
-            reservation.openOutput()
-        } catch (_: IOException) {
-            throw InboundStorageFailure("pending_open_failed")
-        }
-        openedOutput(pendingOutput)
-        val fileDigest = MessageDigest.getInstance("SHA-256")
-        var expectedIndex = 0L
-        var expectedOffset = 0L
-        emit(execution, summary, TransferActivityPhase.TRANSFERRING)
+        // Receive each item in manifest order. Already-committed items are retained even
+        // if a later item fails; only the in-flight Staging Reservation is aborted.
+        var committedBytes = 0L
+        manifest.entries.forEachIndexed { index, entry ->
+            val isLast = index == manifest.entries.lastIndex
+            val reservation = destination.reserve(entry.displayName, entry.mediaType)
+            execution.reservation = reservation
+            val pendingOutput = try {
+                reservation.openOutput()
+            } catch (_: IOException) {
+                throw InboundStorageFailure("pending_open_failed")
+            }
+            openedOutput(pendingOutput)
+            val fileDigest = MessageDigest.getInstance("SHA-256")
+            var expectedIndex = 0L
+            var expectedOffset = 0L
+            emit(
+                execution, summary, TransferActivityPhase.TRANSFERRING, committedBytes,
+                completedItems = index, totalItems = totalItems, currentItemName = entry.displayName,
+            )
 
-        while (true) {
-            throwIfCancelled(execution)
-            val record = connection.channel.receiveRecord(timeouts.idleMillis)
-                ?: throw IOException("connection_closed")
-            requireRecord(execution, record, record.header.type)
-            when (record.header.type) {
-                TransferRecordType.CHUNK -> {
-                    val prelude = TransferChunkPrelude.decode(
-                        record.payload.copyOfRange(0, TRANSFER_CHUNK_PRELUDE_SIZE),
-                    )
-                    val data = record.payload.copyOfRange(TRANSFER_CHUNK_PRELUDE_SIZE, record.payload.size)
-                    if (prelude.itemId != entry.itemId) throw TransferProtocolException("item_id_mismatch")
-                    if (prelude.chunkIndex != expectedIndex || prelude.offset != expectedOffset) {
-                        throw TransferProtocolException("out_of_order_chunk")
-                    }
-                    if (prelude.dataLength != data.size) throw TransferProtocolException("chunk_length_mismatch")
-                    val remaining = entry.byteCount - expectedOffset
-                    val expectedLength = minOf(negotiated.chunkSize.toLong(), remaining).toInt()
-                    if (data.size != expectedLength) throw TransferProtocolException("negotiated_chunk_length_mismatch")
-                    if (!MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(data), prelude.sha256)) {
-                        throw InboundIntegrityFailure("chunk_sha256_mismatch")
-                    }
-                    if (expectedOffset + data.size > entry.byteCount) throw InboundIntegrityFailure("byte_count_exceeded")
-                    try {
-                        pendingOutput.write(data)
-                    } catch (_: IOException) {
-                        throw InboundStorageFailure("pending_write_failed")
-                    }
-                    fileDigest.update(data)
-                    expectedOffset += data.size
-                    expectedIndex += 1
-                    emit(execution, summary, TransferActivityPhase.TRANSFERRING, expectedOffset)
-                    send(
-                        execution,
-                        TransferRecordType.PROGRESS,
-                        TransferControlCodec.encode(
-                            TransferProgress(
-                                entry.itemId,
-                                expectedOffset,
-                                expectedIndex,
-                                TransferProgressPhase.TRANSFERRING,
-                            ),
-                        ),
-                    )
-                }
-
-                TransferRecordType.SENDER_FINISHED -> {
-                    val finished = decodeControl(
-                        TransferRecordType.SENDER_FINISHED,
-                        record.payload,
-                    ) as? TransferSenderFinished ?: throw TransferProtocolException("invalid_sender_finished")
-                    try {
-                        pendingOutput.flush()
-                        pendingOutput.close()
-                    } catch (_: IOException) {
-                        throw InboundStorageFailure("pending_write_failed")
-                    }
-                    emit(execution, summary, TransferActivityPhase.VERIFYING, expectedOffset)
-                    if (finished.itemId != entry.itemId ||
-                        finished.byteCount != entry.byteCount ||
-                        expectedOffset != entry.byteCount
-                    ) {
-                        throw InboundIntegrityFailure("file_length_mismatch")
-                    }
-                    if (!MessageDigest.isEqual(finished.sha256, entry.sha256) ||
-                        !MessageDigest.isEqual(fileDigest.digest(), entry.sha256)
-                    ) {
-                        throw InboundIntegrityFailure("file_sha256_mismatch")
-                    }
-                    emit(execution, summary, TransferActivityPhase.COMMITTING, expectedOffset)
-                    val artifact = synchronized(lock) {
-                        execution.cancellationReason?.let { throw InboundCancellation(it) }
-                        reservation.commit().also { execution.committed = true }
-                    }
-                    runCatching {
+            item@ while (true) {
+                throwIfCancelled(execution)
+                val record = connection.channel.receiveRecord(timeouts.idleMillis)
+                    ?: throw IOException("connection_closed")
+                requireRecord(execution, record, record.header.type)
+                when (record.header.type) {
+                    TransferRecordType.CHUNK -> {
+                        val prelude = TransferChunkPrelude.decode(
+                            record.payload.copyOfRange(0, TRANSFER_CHUNK_PRELUDE_SIZE),
+                        )
+                        val data = record.payload.copyOfRange(TRANSFER_CHUNK_PRELUDE_SIZE, record.payload.size)
+                        if (prelude.itemId != entry.itemId) throw TransferProtocolException("item_id_mismatch")
+                        if (prelude.chunkIndex != expectedIndex || prelude.offset != expectedOffset) {
+                            throw TransferProtocolException("out_of_order_chunk")
+                        }
+                        if (prelude.dataLength != data.size) throw TransferProtocolException("chunk_length_mismatch")
+                        val remaining = entry.byteCount - expectedOffset
+                        val expectedLength = minOf(negotiated.chunkSize.toLong(), remaining).toInt()
+                        if (data.size != expectedLength) throw TransferProtocolException("negotiated_chunk_length_mismatch")
+                        if (!MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(data), prelude.sha256)) {
+                            throw InboundIntegrityFailure("chunk_sha256_mismatch")
+                        }
+                        if (expectedOffset + data.size > entry.byteCount) throw InboundIntegrityFailure("byte_count_exceeded")
+                        try {
+                            pendingOutput.write(data)
+                        } catch (_: IOException) {
+                            throw InboundStorageFailure("pending_write_failed")
+                        }
+                        fileDigest.update(data)
+                        expectedOffset += data.size
+                        expectedIndex += 1
+                        emit(
+                            execution, summary, TransferActivityPhase.TRANSFERRING, committedBytes + expectedOffset,
+                            completedItems = index, totalItems = totalItems, currentItemName = entry.displayName,
+                        )
                         send(
                             execution,
-                            TransferRecordType.TERMINAL_RESULT,
+                            TransferRecordType.PROGRESS,
                             TransferControlCodec.encode(
-                                TransferWireTerminalResult(
-                                    WireTerminalStatus.COMPLETED,
-                                    committedArtifactId = artifact.id,
+                                TransferProgress(
+                                    entry.itemId,
+                                    expectedOffset,
+                                    expectedIndex,
+                                    TransferProgressPhase.TRANSFERRING,
                                 ),
                             ),
                         )
                     }
-                    emit(execution, summary, TransferActivityPhase.COMPLETED, expectedOffset, artifact)
-                    return RoleTransferOutcome(TransferTerminalResult.COMPLETED, listOf(artifact))
-                }
 
-                TransferRecordType.CANCEL -> {
-                    val cancel = decodeControl(TransferRecordType.CANCEL, record.payload) as? TransferCancel
-                        ?: throw TransferProtocolException("invalid_cancel")
-                    throw InboundCancellation(cancel.reasonCode.ifEmpty { "sender_cancelled" })
-                }
+                    TransferRecordType.SENDER_FINISHED -> {
+                        val finished = decodeControl(
+                            TransferRecordType.SENDER_FINISHED,
+                            record.payload,
+                        ) as? TransferSenderFinished ?: throw TransferProtocolException("invalid_sender_finished")
+                        try {
+                            pendingOutput.flush()
+                            pendingOutput.close()
+                        } catch (_: IOException) {
+                            throw InboundStorageFailure("pending_write_failed")
+                        }
+                        emit(
+                            execution, summary, TransferActivityPhase.VERIFYING, committedBytes + expectedOffset,
+                            completedItems = index, totalItems = totalItems, currentItemName = entry.displayName,
+                        )
+                        if (finished.itemId != entry.itemId ||
+                            finished.byteCount != entry.byteCount ||
+                            expectedOffset != entry.byteCount
+                        ) {
+                            throw InboundIntegrityFailure("file_length_mismatch")
+                        }
+                        if (!MessageDigest.isEqual(finished.sha256, entry.sha256) ||
+                            !MessageDigest.isEqual(fileDigest.digest(), entry.sha256)
+                        ) {
+                            throw InboundIntegrityFailure("file_sha256_mismatch")
+                        }
+                        emit(
+                            execution, summary, TransferActivityPhase.COMMITTING, committedBytes + expectedOffset,
+                            completedItems = index, totalItems = totalItems, currentItemName = entry.displayName,
+                        )
+                        val artifact = synchronized(lock) {
+                            execution.cancellationReason?.let { throw InboundCancellation(it) }
+                            reservation.commit().also {
+                                if (isLast) execution.committed = true
+                            }
+                        }
+                        execution.committedArtifacts += artifact
+                        execution.reservation = null
+                        committedBytes += entry.byteCount
+                        if (isLast) {
+                            runCatching {
+                                send(
+                                    execution,
+                                    TransferRecordType.TERMINAL_RESULT,
+                                    TransferControlCodec.encode(
+                                        TransferWireTerminalResult(
+                                            WireTerminalStatus.COMPLETED,
+                                            committedArtifactId = "",
+                                        ),
+                                    ),
+                                )
+                            }
+                            emit(
+                                execution, summary, TransferActivityPhase.COMPLETED, committedBytes, artifact,
+                                completedItems = totalItems, totalItems = totalItems,
+                            )
+                            return RoleTransferOutcome(
+                                TransferTerminalResult.COMPLETED,
+                                execution.committedArtifacts.toList(),
+                            )
+                        }
+                        send(
+                            execution,
+                            TransferRecordType.ITEM_COMMITTED,
+                            TransferControlCodec.encode(TransferItemCommitted(entry.itemId, "")),
+                        )
+                        break@item
+                    }
 
-                else -> throw TransferProtocolException("unexpected_${record.header.type.name.lowercase()}")
+                    TransferRecordType.CANCEL -> {
+                        val cancel = decodeControl(TransferRecordType.CANCEL, record.payload) as? TransferCancel
+                            ?: throw TransferProtocolException("invalid_cancel")
+                        throw InboundCancellation(cancel.reasonCode.ifEmpty { "sender_cancelled" })
+                    }
+
+                    else -> throw TransferProtocolException("unexpected_${record.header.type.name.lowercase()}")
+                }
             }
         }
+        throw TransferProtocolException("missing_sender_finished")
     }
 
     private fun rejectBootstrap(
@@ -521,8 +575,13 @@ class InboundTransferSession(
             }
         }
         val failure = TransferFailure(category, code)
-        execution.summary?.let { emit(execution, it, phase, failure = failure) }
-        return RoleTransferOutcome(result, failure = failure)
+        execution.summary?.let {
+            emit(
+                execution, it, phase, failure = failure,
+                completedItems = execution.committedArtifacts.size, totalItems = it.itemCount,
+            )
+        }
+        return RoleTransferOutcome(result, execution.committedArtifacts.toList(), failure)
     }
 
     private fun emit(
@@ -532,9 +591,17 @@ class InboundTransferSession(
         verifiedBytes: Long = 0,
         artifact: CommittedArtifact? = null,
         failure: TransferFailure? = null,
+        completedItems: Int = 0,
+        totalItems: Int = 1,
+        currentItemName: String = "",
     ) {
         if (execution.visible) {
-            events.emit(InboundTransferSessionEvent(phase, summary, verifiedBytes, artifact, failure))
+            events.emit(
+                InboundTransferSessionEvent(
+                    phase, summary, verifiedBytes, artifact, failure,
+                    completedItems, totalItems, currentItemName,
+                ),
+            )
         }
     }
 

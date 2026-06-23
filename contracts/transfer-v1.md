@@ -21,10 +21,10 @@ Every application record begins with this 32-byte, network-byte-order header:
 | 16 | 16 | Transfer Session identifier | UUID bytes in RFC 4122 order |
 
 The v1 type registry is `1 Manifest`, `2 Approval`, `3 Progress`, `4
-SenderFinished`, `5 Cancel`, `6 TerminalResult`, and `7 Chunk`. Values `0` and
-`8...239` and `242...255` are reserved. Global envelope types `240 SessionHello`
-and `241 SessionDecision` are defined by the bootstrap contract rather than v1.
-Because v1 has no optional-record flag, an unknown type or
+SenderFinished`, `5 Cancel`, `6 TerminalResult`, `7 Chunk`, and `8 ItemCommitted`.
+Values `0` and `9...239` and `242...255` are reserved. Global envelope types
+`240 SessionHello` and `241 SessionDecision` are defined by the bootstrap contract
+rather than v1. Because v1 has no optional-record flag, an unknown type or
 any non-zero flag is a protocol error.
 
 Control payloads are Protobuf messages from
@@ -54,15 +54,26 @@ mismatch, or length mismatch fails the Transfer Session before Commit.
 1. After TLS authentication, the sender and receiver exchange bootstrap Hello and
    Decision, select protocol 1.0, capabilities, and Chunk size, and acquire the
    receiver session lease.
-2. The sender emits a one-entry Manifest using the selected Chunk size.
-3. The receiver answers with Approval. Rejection is terminal and allocates no
-   destination.
-4. The sender emits ordered Chunks. The receiver writes and hashes bounded slices,
-   then reports cumulative Progress after each verified Chunk.
-5. The sender emits SenderFinished. The receiver verifies the cumulative length and
-   whole-file digest, publishes the pending destination, and emits TerminalResult.
-6. Either side may emit Cancel until publication. Publication is the Commit
-   linearization point; after it, `completed` is final.
+2. The sender emits one Manifest describing the whole batch: one or more ordered
+   `FileEntry` items using the selected Chunk size. A Manifest carries at least one
+   and at most 512 items with distinct item ids; the receiver additionally bounds the
+   aggregate declared byte count. An empty, oversized, or duplicate-id Manifest is a
+   protocol error.
+3. The receiver answers with one Approval for the entire batch. Rejection is terminal
+   and allocates no destination.
+4. The sender streams the items in Manifest order. For each item it emits ordered
+   Chunks; the receiver writes and hashes bounded slices and reports cumulative
+   Progress after each verified Chunk of that item.
+5. After an item's Chunks, the sender emits SenderFinished for that item. The receiver
+   verifies the cumulative length and whole-file digest and commits the item. For every
+   non-final item it answers with `ItemCommitted(item_id)`, signalling the sender to
+   advance; for the final item it answers with one session TerminalResult. A committed
+   item is durable even if a later item fails — the sender never receives receiver-side
+   paths (`committed_artifact_id` stays empty on the wire on both platforms).
+6. Either side may emit Cancel. Each item's publication is its own Commit linearization
+   point: already-committed items remain committed, and only the in-flight item's pending
+   destination is discarded. After the final-item TerminalResult `completed`, the batch
+   is final.
 
 For Peer revocation, a sender emits `Cancel` with reason `peer_unpaired`. The
 receiver deletes any pending destination and returns

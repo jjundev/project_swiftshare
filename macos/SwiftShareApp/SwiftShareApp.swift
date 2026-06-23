@@ -2,6 +2,7 @@ import SwiftShareDomain
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 import ServiceManagement
+import UniformTypeIdentifiers
 
 @main
 struct SwiftShareApp: App {
@@ -27,6 +28,7 @@ private struct FixedEndpointTransferView: View {
     @ObservedObject var launchAtLogin: MacLaunchAtLoginModel
     @ObservedObject var inbound: MacInboundRuntime
     @State private var scanningEndpointQR = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         ScrollView {
@@ -139,31 +141,55 @@ private struct FixedEndpointTransferView: View {
 
                 GroupBox("Payload review") {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let file = model.preparedFile {
+                        if !model.preparedFiles.isEmpty {
                             LabeledContent("Destination", value: model.destinationLabel)
-                            LabeledContent("Items", value: "1")
-                            LabeledContent("File", value: file.displayName)
-                            LabeledContent("Total", value: ByteCountFormatter.string(fromByteCount: Int64(file.byteCount), countStyle: .file))
+                            LabeledContent("Items", value: "\(model.itemCount)")
+                            LabeledContent("Total", value: ByteCountFormatter.string(fromByteCount: Int64(model.batchByteCount), countStyle: .file))
+                            ForEach(model.preparedFiles, id: \.itemID) { file in
+                                HStack {
+                                    Image(systemName: "doc")
+                                    Text(file.displayName).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64(file.byteCount), countStyle: .file))
+                                        .foregroundStyle(.secondary).font(.caption)
+                                }
+                            }
                         } else {
-                            Text("No file selected").foregroundStyle(.secondary)
+                            Text("No files selected").foregroundStyle(.secondary)
                         }
-                        Button("Select one file…", action: model.selectFile)
+                        if !model.rejectedItems.isEmpty {
+                            Text("Skipped (unsupported or unreadable): \(model.rejectedItems.joined(separator: ", "))")
+                                .font(.caption).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack {
+                            Button("Choose files…", action: model.selectFiles)
+                            if !model.preparedFiles.isEmpty {
+                                Button("Clear", role: .destructive, action: model.clearSelection)
+                            }
+                        }
+                        Text("Tip: drag files onto this window to add them.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if let file = model.preparedFile, let phase = model.phase {
+                if !model.preparedFiles.isEmpty, let phase = model.phase {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
                             Text(model.statusMessage).fontWeight(.semibold)
                             Spacer()
-                            if file.byteCount > 0 {
-                                Text("\(Int((Double(model.verifiedBytes) / Double(file.byteCount)) * 100))%")
+                            if model.totalBytes > 0 {
+                                Text("\(Int((Double(model.verifiedBytes) / Double(model.totalBytes)) * 100))%")
                                     .monospacedDigit()
                             }
                         }
-                        ProgressView(value: Double(model.verifiedBytes), total: Double(max(file.byteCount, 1)))
-                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(model.verifiedBytes), countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: Int64(file.byteCount), countStyle: .file)) verified")
+                        if model.totalItems > 1 {
+                            Text("Item \(min(model.completedItems + 1, model.totalItems)) of \(model.totalItems)\(model.currentItemName.isEmpty ? "" : " · \(model.currentItemName)")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: Double(model.verifiedBytes), total: Double(max(model.totalBytes, 1)))
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(model.verifiedBytes), countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: Int64(model.totalBytes), countStyle: .file)) verified")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if [.connecting, .awaitingApproval, .transferring, .verifying].contains(phase) {
@@ -195,12 +221,47 @@ private struct FixedEndpointTransferView: View {
             .padding(18)
         }
         .frame(width: 420, height: 760)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            Task {
+                let urls = await Self.loadDroppedURLs(providers)
+                await MainActor.run { model.dropFiles(urls) }
+            }
+            return true
+        }
         .sheet(isPresented: $scanningEndpointQR) {
             EndpointQRScannerView { value in model.endpointQR = value; scanningEndpointQR = false }
         }
         .onChange(of: pairing.peers) { _, _ in
             Task { await inbound.restart() }
         }
+    }
+
+    /// Loads dropped file URLs sequentially so the batch preserves drop order.
+    private static func loadDroppedURLs(_ providers: [NSItemProvider]) async -> [URL] {
+        var urls: [URL] = []
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            let url: URL? = await withCheckedContinuation { continuation in
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        continuation.resume(returning: url)
+                    } else if let url = item as? URL {
+                        continuation.resume(returning: url)
+                    } else {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+            if let url { urls.append(url) }
+        }
+        return urls
     }
 }
 

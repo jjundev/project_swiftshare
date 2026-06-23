@@ -24,13 +24,15 @@ internal class AndroidOutboundStateStore(initial: AndroidOutboundSnapshot) {
     }
 
     fun beginSend(): Boolean = synchronized(lock) {
-        val draft = value.draft ?: return false
+        if (value.drafts.isEmpty()) return false
         val peer = value.selectedPeerId ?: return false
         if (value.active || peer !in value.onlinePeerIds) return false
         value = value.copy(
             phase = TransferActivityPhase.CONNECTING,
             transferredBytes = 0,
-            totalBytes = draft.byteCount,
+            totalBytes = value.batchByteCount,
+            completedItems = 0,
+            totalItems = value.drafts.size,
             failure = null,
         )
         true

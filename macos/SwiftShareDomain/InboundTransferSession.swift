@@ -47,11 +47,21 @@ public struct InboundTransferSummary: Equatable, Sendable {
     public let authenticatedSender: String
     public let displayName: String
     public let byteCount: UInt64
+    public let itemCount: Int
+    public let totalBytes: UInt64
 
-    public init(authenticatedSender: String, displayName: String, byteCount: UInt64) {
+    public init(
+        authenticatedSender: String,
+        displayName: String,
+        byteCount: UInt64,
+        itemCount: Int = 1,
+        totalBytes: UInt64? = nil
+    ) {
         self.authenticatedSender = authenticatedSender
         self.displayName = displayName
         self.byteCount = byteCount
+        self.itemCount = itemCount
+        self.totalBytes = totalBytes ?? byteCount
     }
 }
 
@@ -72,19 +82,28 @@ public struct InboundTransferSessionEvent: Equatable, Sendable {
     public let verifiedBytes: UInt64
     public let artifact: CommittedArtifact?
     public let failure: TransferFailure?
+    public let completedItems: Int
+    public let totalItems: Int
+    public let currentItemName: String
 
     public init(
         phase: TransferActivityPhase,
         summary: InboundTransferSummary,
         verifiedBytes: UInt64 = 0,
         artifact: CommittedArtifact? = nil,
-        failure: TransferFailure? = nil
+        failure: TransferFailure? = nil,
+        completedItems: Int = 0,
+        totalItems: Int = 1,
+        currentItemName: String = ""
     ) {
         self.phase = phase
         self.summary = summary
         self.verifiedBytes = verifiedBytes
         self.artifact = artifact
         self.failure = failure
+        self.completedItems = completedItems
+        self.totalItems = totalItems
+        self.currentItemName = currentItemName
     }
 }
 
@@ -190,6 +209,7 @@ public actor InboundTransferSession {
         var summary: InboundTransferSummary?
         var cancellationReason: String?
         var committed = false
+        var committedArtifacts: [CommittedArtifact] = []
 
         init(connection: InboundAuthenticatedConnection) { self.connection = connection }
     }
@@ -327,24 +347,32 @@ public actor InboundTransferSession {
         }
         try requireRecord(execution, manifestRecord, type: .manifest)
         let message = try TransferControlCodec.decode(type: .manifest, data: manifestRecord.payload)
-        guard case .manifest(let entries) = message, entries.count == 1 else {
-            throw InboundTransferFailure.protocol("single_payload_required")
+        guard case .manifest(let entries) = message, !entries.isEmpty else {
+            throw InboundTransferFailure.protocol("empty_manifest")
         }
-        let entry = entries[0]
-        guard entry.chunkSize == negotiated.chunkSize else {
-            throw InboundTransferFailure.protocol("negotiated_chunk_size_mismatch")
+        let totalBytes = entries.reduce(UInt64(0)) { $0 + $1.byteCount }
+        guard totalBytes <= transferMaxBatchBytes else {
+            throw InboundTransferFailure.protocol("manifest_too_large")
         }
-        try Self.validateBasename(entry.displayName)
+        for entry in entries {
+            guard entry.chunkSize == negotiated.chunkSize else {
+                throw InboundTransferFailure.protocol("negotiated_chunk_size_mismatch")
+            }
+            try Self.validateBasename(entry.displayName)
+        }
         do { try await destination.preflight() }
         catch let error as InboundTransferFailure { throw error }
         catch { throw InboundTransferFailure.permission("destination_permission_required") }
         guard let peer = await execution.connection.authorizer.currentPeer() else {
             throw InboundTransferFailure.cancelled("peer_unpaired", category: .authentication)
         }
+        let totalItems = entries.count
         let summary = InboundTransferSummary(
             authenticatedSender: peer.displayName,
-            displayName: entry.displayName,
-            byteCount: entry.byteCount
+            displayName: entries[0].displayName,
+            byteCount: entries[0].byteCount,
+            itemCount: totalItems,
+            totalBytes: totalBytes
         )
         execution.summary = summary
 
@@ -352,7 +380,7 @@ public actor InboundTransferSession {
         if peer.approvalPolicy == .autoAccept {
             approval = .accepted
         } else {
-            await events.emit(InboundTransferSessionEvent(phase: .awaitingApproval, summary: summary))
+            await events.emit(InboundTransferSessionEvent(phase: .awaitingApproval, summary: summary, totalItems: totalItems))
             approval = try await timed(timeouts.approval, category: .approval, code: "approval_timeout") {
                 await self.approvalGateway.awaitDecision(summary)
             }
@@ -374,137 +402,174 @@ public actor InboundTransferSession {
             await events.emit(InboundTransferSessionEvent(
                 phase: .rejected,
                 summary: summary,
-                failure: failure
+                failure: failure,
+                totalItems: totalItems
             ))
             return RoleTransferOutcome(result: .rejected, failure: failure)
         }
 
-        let reservation: any InboundTransferReservation
-        do {
-            reservation = try await destination.reserve(
-                displayName: entry.displayName,
-                mediaType: entry.mediaType,
-                sessionID: helloRecord.header.sessionID,
-                itemID: entry.itemID
-            )
-        } catch let error as InboundTransferFailure { throw error }
-        catch { throw InboundTransferFailure.storage("pending_open_failed") }
-        execution.reservation = reservation
-        var fileDigest = SHA256()
-        var expectedIndex: UInt32 = 0
-        var expectedOffset: UInt64 = 0
-        await events.emit(InboundTransferSessionEvent(phase: .transferring, summary: summary))
-
-        while true {
-            try throwIfCancelled(execution)
-            let record = try await timed(timeouts.idle, category: .network, code: "idle_timeout") {
-                try await execution.connection.channel.receiveRecord()
-            }
-            try requireRecord(execution, record, type: record.header.type)
-            switch record.header.type {
-            case .chunk:
-                let prelude = try TransferChunkPrelude.decode(record.payload.prefix(transferChunkPreludeSize))
-                let data = record.payload.dropFirst(transferChunkPreludeSize)
-                guard prelude.itemID == entry.itemID else { throw InboundTransferFailure.protocol("item_id_mismatch") }
-                guard prelude.chunkIndex == expectedIndex, prelude.offset == expectedOffset else {
-                    throw InboundTransferFailure.protocol("out_of_order_chunk")
-                }
-                guard Int(prelude.dataLength) == data.count else {
-                    throw InboundTransferFailure.protocol("chunk_length_mismatch")
-                }
-                guard !data.isEmpty else { throw InboundTransferFailure.protocol("empty_chunk") }
-                guard expectedOffset < entry.byteCount else {
-                    throw InboundTransferFailure.protocol("chunk_after_file_end")
-                }
-                let remaining = entry.byteCount - expectedOffset
-                let expectedLength = min(UInt64(negotiated.chunkSize), remaining)
-                guard UInt64(data.count) == expectedLength else {
-                    throw InboundTransferFailure.protocol("negotiated_chunk_length_mismatch")
-                }
-                guard Data(SHA256.hash(data: data)) == prelude.sha256 else {
-                    throw InboundTransferFailure.integrity("chunk_sha256_mismatch")
-                }
-                do { try await reservation.write(Data(data)) }
-                catch { throw InboundTransferFailure.storage("pending_write_failed") }
-                fileDigest.update(data: data)
-                expectedOffset += UInt64(data.count)
-                expectedIndex += 1
-                await events.emit(InboundTransferSessionEvent(
-                    phase: .transferring,
-                    summary: summary,
-                    verifiedBytes: expectedOffset
-                ))
-                try await send(
-                    execution,
-                    type: .progress,
-                    payload: TransferControlCodec.encode(.progress(
-                        itemID: entry.itemID,
-                        verifiedBytes: expectedOffset,
-                        verifiedChunks: expectedIndex,
-                        phase: .transferring
-                    ))
+        // Receive each item in manifest order. Every committed item is retained even if a
+        // later item fails; the in-flight Staging Reservation is the only one aborted.
+        var committedBytes: UInt64 = 0
+        for (index, entry) in entries.enumerated() {
+            let isLast = index == entries.count - 1
+            let reservation: any InboundTransferReservation
+            do {
+                reservation = try await destination.reserve(
+                    displayName: entry.displayName,
+                    mediaType: entry.mediaType,
+                    sessionID: helloRecord.header.sessionID,
+                    itemID: entry.itemID
                 )
+            } catch let error as InboundTransferFailure { throw error }
+            catch { throw InboundTransferFailure.storage("pending_open_failed") }
+            execution.reservation = reservation
+            var fileDigest = SHA256()
+            var expectedIndex: UInt32 = 0
+            var expectedOffset: UInt64 = 0
+            await events.emit(InboundTransferSessionEvent(
+                phase: .transferring,
+                summary: summary,
+                verifiedBytes: committedBytes,
+                completedItems: index,
+                totalItems: totalItems,
+                currentItemName: entry.displayName
+            ))
 
-            case .senderFinished:
-                let finished = try TransferControlCodec.decode(type: .senderFinished, data: record.payload)
-                guard case .senderFinished(let itemID, let byteCount, let digest) = finished else {
-                    throw InboundTransferFailure.protocol("invalid_sender_finished")
-                }
-                do { try await reservation.finishWriting() }
-                catch { throw InboundTransferFailure.storage("pending_write_failed") }
-                await events.emit(InboundTransferSessionEvent(
-                    phase: .verifying,
-                    summary: summary,
-                    verifiedBytes: expectedOffset
-                ))
-                guard itemID == entry.itemID,
-                      byteCount == entry.byteCount,
-                      expectedOffset == entry.byteCount
-                else { throw InboundTransferFailure.integrity("file_length_mismatch") }
-                guard digest == entry.sha256,
-                      Data(fileDigest.finalize()) == entry.sha256
-                else { throw InboundTransferFailure.integrity("file_sha256_mismatch") }
+            item: while true {
                 try throwIfCancelled(execution)
-                await events.emit(InboundTransferSessionEvent(
-                    phase: .committing,
-                    summary: summary,
-                    verifiedBytes: expectedOffset
-                ))
-                let artifact: CommittedArtifact
-                do { artifact = try await reservation.commit() }
-                catch { throw InboundTransferFailure.storage("destination_commit_failed") }
-                execution.committed = true
-                try? await send(
-                    execution,
-                    type: .terminalResult,
-                    payload: TransferControlCodec.encode(.terminalResult(
-                        status: .completed,
-                        errorCategory: nil,
-                        errorCode: "",
-                        committedArtifactID: ""
-                    ))
-                )
-                await events.emit(InboundTransferSessionEvent(
-                    phase: .completed,
-                    summary: summary,
-                    verifiedBytes: expectedOffset,
-                    artifact: artifact
-                ))
-                return RoleTransferOutcome(result: .completed, committedArtifacts: [artifact])
-
-            case .cancel:
-                let cancel = try TransferControlCodec.decode(type: .cancel, data: record.payload)
-                guard case .cancel(let reason) = cancel else {
-                    throw InboundTransferFailure.protocol("invalid_cancel")
+                let record = try await timed(timeouts.idle, category: .network, code: "idle_timeout") {
+                    try await execution.connection.channel.receiveRecord()
                 }
-                let category: TransferErrorCategory = reason == "peer_unpaired" ? .authentication :
-                    (reason == "source_changed" ? .source : .cancelled)
-                throw InboundTransferFailure.cancelled(reason.isEmpty ? "sender_cancelled" : reason, category: category)
+                try requireRecord(execution, record, type: record.header.type)
+                switch record.header.type {
+                case .chunk:
+                    let prelude = try TransferChunkPrelude.decode(record.payload.prefix(transferChunkPreludeSize))
+                    let data = record.payload.dropFirst(transferChunkPreludeSize)
+                    guard prelude.itemID == entry.itemID else { throw InboundTransferFailure.protocol("item_id_mismatch") }
+                    guard prelude.chunkIndex == expectedIndex, prelude.offset == expectedOffset else {
+                        throw InboundTransferFailure.protocol("out_of_order_chunk")
+                    }
+                    guard Int(prelude.dataLength) == data.count else {
+                        throw InboundTransferFailure.protocol("chunk_length_mismatch")
+                    }
+                    guard !data.isEmpty else { throw InboundTransferFailure.protocol("empty_chunk") }
+                    guard expectedOffset < entry.byteCount else {
+                        throw InboundTransferFailure.protocol("chunk_after_file_end")
+                    }
+                    let remaining = entry.byteCount - expectedOffset
+                    let expectedLength = min(UInt64(negotiated.chunkSize), remaining)
+                    guard UInt64(data.count) == expectedLength else {
+                        throw InboundTransferFailure.protocol("negotiated_chunk_length_mismatch")
+                    }
+                    guard Data(SHA256.hash(data: data)) == prelude.sha256 else {
+                        throw InboundTransferFailure.integrity("chunk_sha256_mismatch")
+                    }
+                    do { try await reservation.write(Data(data)) }
+                    catch { throw InboundTransferFailure.storage("pending_write_failed") }
+                    fileDigest.update(data: data)
+                    expectedOffset += UInt64(data.count)
+                    expectedIndex += 1
+                    await events.emit(InboundTransferSessionEvent(
+                        phase: .transferring,
+                        summary: summary,
+                        verifiedBytes: committedBytes + expectedOffset,
+                        completedItems: index,
+                        totalItems: totalItems,
+                        currentItemName: entry.displayName
+                    ))
+                    try await send(
+                        execution,
+                        type: .progress,
+                        payload: TransferControlCodec.encode(.progress(
+                            itemID: entry.itemID,
+                            verifiedBytes: expectedOffset,
+                            verifiedChunks: expectedIndex,
+                            phase: .transferring
+                        ))
+                    )
 
-            default:
-                throw InboundTransferFailure.protocol("unexpected_record")
+                case .senderFinished:
+                    let finished = try TransferControlCodec.decode(type: .senderFinished, data: record.payload)
+                    guard case .senderFinished(let itemID, let byteCount, let digest) = finished else {
+                        throw InboundTransferFailure.protocol("invalid_sender_finished")
+                    }
+                    do { try await reservation.finishWriting() }
+                    catch { throw InboundTransferFailure.storage("pending_write_failed") }
+                    await events.emit(InboundTransferSessionEvent(
+                        phase: .verifying,
+                        summary: summary,
+                        verifiedBytes: committedBytes + expectedOffset,
+                        completedItems: index,
+                        totalItems: totalItems,
+                        currentItemName: entry.displayName
+                    ))
+                    guard itemID == entry.itemID,
+                          byteCount == entry.byteCount,
+                          expectedOffset == entry.byteCount
+                    else { throw InboundTransferFailure.integrity("file_length_mismatch") }
+                    guard digest == entry.sha256,
+                          Data(fileDigest.finalize()) == entry.sha256
+                    else { throw InboundTransferFailure.integrity("file_sha256_mismatch") }
+                    try throwIfCancelled(execution)
+                    await events.emit(InboundTransferSessionEvent(
+                        phase: .committing,
+                        summary: summary,
+                        verifiedBytes: committedBytes + expectedOffset,
+                        completedItems: index,
+                        totalItems: totalItems,
+                        currentItemName: entry.displayName
+                    ))
+                    let artifact: CommittedArtifact
+                    do { artifact = try await reservation.commit() }
+                    catch { throw InboundTransferFailure.storage("destination_commit_failed") }
+                    execution.committedArtifacts.append(artifact)
+                    execution.reservation = nil
+                    committedBytes += entry.byteCount
+                    if isLast {
+                        execution.committed = true
+                        try? await send(
+                            execution,
+                            type: .terminalResult,
+                            payload: TransferControlCodec.encode(.terminalResult(
+                                status: .completed,
+                                errorCategory: nil,
+                                errorCode: "",
+                                committedArtifactID: ""
+                            ))
+                        )
+                        await events.emit(InboundTransferSessionEvent(
+                            phase: .completed,
+                            summary: summary,
+                            verifiedBytes: committedBytes,
+                            artifact: artifact,
+                            completedItems: totalItems,
+                            totalItems: totalItems
+                        ))
+                        return RoleTransferOutcome(result: .completed, committedArtifacts: execution.committedArtifacts)
+                    }
+                    try await send(
+                        execution,
+                        type: .itemCommitted,
+                        payload: TransferControlCodec.encode(.itemCommitted(itemID: entry.itemID, committedArtifactID: ""))
+                    )
+                    break item
+
+                case .cancel:
+                    let cancel = try TransferControlCodec.decode(type: .cancel, data: record.payload)
+                    guard case .cancel(let reason) = cancel else {
+                        throw InboundTransferFailure.protocol("invalid_cancel")
+                    }
+                    let category: TransferErrorCategory = reason == "peer_unpaired" ? .authentication :
+                        (reason == "source_changed" ? .source : .cancelled)
+                    throw InboundTransferFailure.cancelled(reason.isEmpty ? "sender_cancelled" : reason, category: category)
+
+                default:
+                    throw InboundTransferFailure.protocol("unexpected_record")
+                }
             }
         }
+        throw InboundTransferFailure.protocol("missing_sender_finished")
     }
 
     private func rejectBootstrap(
@@ -555,11 +620,14 @@ public actor InboundTransferSession {
             await events.emit(InboundTransferSessionEvent(
                 phase: failure.phase,
                 summary: summary,
-                failure: TransferFailure(category: failure.category, code: failure.code)
+                failure: TransferFailure(category: failure.category, code: failure.code),
+                completedItems: execution.committedArtifacts.count,
+                totalItems: summary.itemCount
             ))
         }
         return RoleTransferOutcome(
             result: failure.result,
+            committedArtifacts: execution.committedArtifacts,
             failure: TransferFailure(category: failure.category, code: failure.code)
         )
     }

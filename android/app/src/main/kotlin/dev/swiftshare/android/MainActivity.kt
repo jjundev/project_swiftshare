@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -113,8 +115,8 @@ class MainActivity : ComponentActivity() {
                 runtime.accept(ReceiveAvailabilityInput.Blocked("notification_permission_denied"))
             }
         }
-        documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) outboundRuntime.prepare(uri)
+        documentPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNotEmpty()) outboundRuntime.prepareDocuments(uris)
         }
         setContent {
             SwiftShareTheme {
@@ -132,6 +134,7 @@ class MainActivity : ComponentActivity() {
                     onCancel = runtime::cancelActive,
                     outbound = outboundState,
                     onChooseDocument = { documentPicker.launch(arrayOf("*/*")) },
+                    onClearOutbound = outboundRuntime::clearSelection,
                     onSelectOutboundPeer = outboundRuntime::selectPeer,
                     onSendOutbound = outboundRuntime::send,
                     onCancelOutbound = outboundRuntime::cancel,
@@ -156,6 +159,12 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        // Only consume the launch intent on first creation. On a configuration change or
+        // process-death recreation the system re-delivers the same SEND intent; re-running
+        // handleSendIntent there would re-prepare (and re-hash) the batch and clobber edits.
+        if (savedInstanceState == null) {
+            handleSendIntent(intent)
+        }
     }
 
     override fun onStart() {
@@ -163,6 +172,41 @@ class MainActivity : ComponentActivity() {
         runtime.accept(ReceiveAvailabilityInput.AppVisibility(foreground = true))
         outboundRuntime.startDiscovery()
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSendIntent(intent)
+    }
+
+    /**
+     * Routes Sharesheet ACTION_SEND / ACTION_SEND_MULTIPLE inputs into the outbound batch as
+     * process-lifetime sources (US19/US20). SwiftShare's own picker remains durable (US21).
+     */
+    private fun handleSendIntent(intent: Intent?) {
+        intent ?: return
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                streamExtra(intent)?.let { outboundRuntime.prepareShared(listOf(it)) }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                streamListExtra(intent).takeIf { it.isNotEmpty() }?.let(outboundRuntime::prepareShared)
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun streamExtra(intent: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else intent.getParcelableExtra(Intent.EXTRA_STREAM)
+
+    @Suppress("DEPRECATION")
+    private fun streamListExtra(intent: Intent): List<Uri> =
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) ?: emptyList()
+        } else {
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+        }
 
     override fun onStop() {
         if (!isChangingConfigurations) {
@@ -230,6 +274,7 @@ fun ReceiveScreen(
     onCancel: () -> Unit,
     outbound: AndroidOutboundSnapshot,
     onChooseDocument: () -> Unit,
+    onClearOutbound: () -> Unit,
     onSelectOutboundPeer: (String) -> Unit,
     onSendOutbound: () -> Unit,
     onCancelOutbound: () -> Unit,
@@ -275,6 +320,7 @@ fun ReceiveScreen(
                 outbound,
                 pairedPeers,
                 onChooseDocument,
+                onClearOutbound,
                 onSelectOutboundPeer,
                 onSendOutbound,
                 onCancelOutbound,
@@ -302,6 +348,7 @@ private fun OutboundContent(
     state: AndroidOutboundSnapshot,
     peers: List<StoredPeer>,
     onChooseDocument: () -> Unit,
+    onClear: () -> Unit,
     onSelectPeer: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
@@ -309,16 +356,36 @@ private fun OutboundContent(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Send Android → Mac", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         if (state.preparing) {
-            Text("Preparing document…")
+            Text("Preparing files…")
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        } else if (state.draft == null) {
-            Text("Choose one document. SwiftShare keeps read access so the reviewed source survives recreation.")
+        } else if (state.drafts.isEmpty()) {
+            Text("Choose files or share them to SwiftShare. The picker keeps durable read access; Sharesheet items are process-lifetime.")
         } else {
-            Text(state.draft.displayName, fontWeight = FontWeight.SemiBold)
-            Text("Items: 1", style = MaterialTheme.typography.bodySmall)
-            Text("${state.draft.byteCount} bytes · ${state.draft.mediaType}", style = MaterialTheme.typography.bodySmall)
+            Text("${state.itemCount} item(s) · ${state.batchByteCount} bytes", fontWeight = FontWeight.SemiBold)
+            state.drafts.forEach { draft ->
+                Text("• ${draft.displayName} (${draft.byteCount} bytes)", style = MaterialTheme.typography.bodySmall)
+            }
+            if (state.hasProcessLifetime) {
+                Text(
+                    "Shared items are process-lifetime: if SwiftShare restarts mid-transfer it cannot resume and you must re-share.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
         }
-        OutlinedButton(onClick = onChooseDocument, enabled = !state.active) { Text("Choose document") }
+        if (state.rejected.isNotEmpty()) {
+            Text(
+                "Skipped (unsupported or unreadable): ${state.rejected.joinToString()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onChooseDocument, enabled = !state.active) { Text("Choose files") }
+            if (state.drafts.isNotEmpty() && !state.active) {
+                OutlinedButton(onClick = onClear) { Text("Clear") }
+            }
+        }
         if (peers.isEmpty()) {
             Text("Pair a Mac before sending.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -336,6 +403,11 @@ private fun OutboundContent(
         }
         state.phase?.let { phase ->
             Text(phase.outboundLabel(), fontWeight = FontWeight.SemiBold)
+            if (state.totalItems > 1) {
+                val current = (state.completedItems + 1).coerceAtMost(state.totalItems)
+                val name = if (state.currentItemName.isEmpty()) "" else " · ${state.currentItemName}"
+                Text("Item $current of ${state.totalItems}$name", style = MaterialTheme.typography.bodySmall)
+            }
             if (state.totalBytes > 0 && phase in setOf(
                     TransferActivityPhase.TRANSFERRING,
                     TransferActivityPhase.VERIFYING,
@@ -353,7 +425,7 @@ private fun OutboundContent(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = onSend,
-                enabled = state.draft != null && state.selectedPeerId in state.onlinePeerIds && !state.active,
+                enabled = state.drafts.isNotEmpty() && state.selectedPeerId in state.onlinePeerIds && !state.active,
             ) { Text("Send to Mac") }
             if (state.active && !state.preparing) OutlinedButton(onClick = onCancel) { Text("Cancel") }
         }
@@ -546,6 +618,7 @@ private fun ReceiveScreenPreview() {
             onCancel = {},
             outbound = AndroidOutboundSnapshot(),
             onChooseDocument = {},
+            onClearOutbound = {},
             onSelectOutboundPeer = {},
             onSendOutbound = {},
             onCancelOutbound = {},

@@ -22,6 +22,7 @@ import dev.swiftshare.domain.OutboundTransferRecordChannel
 import dev.swiftshare.domain.ProductionOutboundTransferSession
 import dev.swiftshare.domain.RoleTransferOutcome
 import dev.swiftshare.domain.TRANSFER_HEADER_SIZE
+import dev.swiftshare.domain.TRANSFER_MAX_BATCH_ITEMS
 import dev.swiftshare.domain.TransferActivityPhase
 import dev.swiftshare.domain.TransferDeadlineScheduler
 import dev.swiftshare.domain.TransferEventSink
@@ -58,23 +59,34 @@ data class PersistedDocumentDraft(
     val mediaType: String,
     val byteCount: Long,
     val sha256: ByteArray,
+    /** Sharesheet (EXTRA_STREAM) grants are process-lifetime; document-picker grants are durable. */
+    val processLifetime: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean = other is PersistedDocumentDraft &&
         itemId == other.itemId && uri == other.uri && displayName == other.displayName &&
-        mediaType == other.mediaType && byteCount == other.byteCount && sha256.contentEquals(other.sha256)
+        mediaType == other.mediaType && byteCount == other.byteCount &&
+        processLifetime == other.processLifetime && sha256.contentEquals(other.sha256)
     override fun hashCode(): Int = itemId.hashCode()
 }
 
 data class AndroidOutboundSnapshot(
-    val draft: PersistedDocumentDraft? = null,
+    val drafts: List<PersistedDocumentDraft> = emptyList(),
+    val rejected: List<String> = emptyList(),
     val onlinePeerIds: Set<String> = emptySet(),
     val selectedPeerId: String? = null,
     val phase: TransferActivityPhase? = null,
     val transferredBytes: Long = 0,
     val totalBytes: Long = 0,
+    val completedItems: Int = 0,
+    val totalItems: Int = 0,
+    val currentItemName: String = "",
     val failure: String? = null,
     val preparing: Boolean = false,
 ) {
+    val itemCount: Int get() = drafts.size
+    val batchByteCount: Long get() = drafts.sumOf { it.byteCount }
+    /** True when any selected source is process-lifetime, so restart-safe resume is unavailable. */
+    val hasProcessLifetime: Boolean get() = drafts.any { it.processLifetime }
     val active: Boolean get() = preparing || phase in setOf(
         TransferActivityPhase.CONNECTING,
         TransferActivityPhase.AWAITING_APPROVAL,
@@ -86,58 +98,96 @@ data class AndroidOutboundSnapshot(
 
 private class DocumentDraftRepository(private val context: Context) {
     private val resolver = context.contentResolver
-    private val file = AtomicFile(File(context.filesDir, "outbound-document-v1.json"))
+    private val file = AtomicFile(File(context.filesDir, "outbound-batch-v1.json"))
 
-    @Synchronized fun read(): PersistedDocumentDraft? = try {
-        if (!file.baseFile.exists()) return null
-        val value = file.openRead().use { JSONObject(it.readBytes().decodeToString()) }
-        require(value.getInt("schema") == 1)
-        PersistedDocumentDraft(
-            UUID.fromString(value.getString("itemId")),
-            value.getString("uri"),
-            value.getString("displayName"),
-            value.getString("mediaType"),
-            value.getLong("byteCount"),
-            Base64.getDecoder().decode(value.getString("sha256")),
-        ).also { require(it.sha256.size == 32 && it.byteCount >= 0) }
+    @Synchronized fun read(): List<PersistedDocumentDraft> = try {
+        if (!file.baseFile.exists()) emptyList() else {
+            val root = file.openRead().use { JSONObject(it.readBytes().decodeToString()) }
+            require(root.getInt("schema") == 2)
+            val items = root.getJSONArray("items")
+            (0 until items.length()).map { index ->
+                val value = items.getJSONObject(index)
+                PersistedDocumentDraft(
+                    UUID.fromString(value.getString("itemId")),
+                    value.getString("uri"),
+                    value.getString("displayName"),
+                    value.getString("mediaType"),
+                    value.getLong("byteCount"),
+                    Base64.getDecoder().decode(value.getString("sha256")),
+                    value.optBoolean("processLifetime", false),
+                ).also { require(it.sha256.size == 32 && it.byteCount >= 0) }
+            }.filter { !it.processLifetime } // process-lifetime drafts never survive a restart
+        }
     } catch (_: Exception) {
-        null
+        emptyList()
     }
 
-    @Synchronized fun prepare(uri: Uri): PersistedDocumentDraft {
-        val prior = read()
-        val preservesPriorGrant = prior?.uri == uri.toString()
-        return withPersistableGrant(
-            preservesPriorGrant = preservesPriorGrant,
-            take = { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) },
-            release = { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) },
-        ) {
-            val metadata = metadata(uri)
-            requireSafeName(metadata.first)
-            val digest = MessageDigest.getInstance("SHA-256")
-            var count = 0L
-            resolver.openInputStream(uri)?.use { input ->
-                val buffer = ByteArray(256 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    if (read == 0) continue
-                    digest.update(buffer, 0, read)
-                    count += read
-                }
-            } ?: error("source_unavailable")
-            if (metadata.second != null && metadata.second != count) error("source_changed")
-            val value = PersistedDocumentDraft(
-                UUID.randomUUID(), uri.toString(), metadata.first,
-                resolver.getType(uri) ?: "application/octet-stream", count, digest.digest(),
-            )
-            write(value)
-            if (prior != null && prior.uri != value.uri) runCatching {
-                resolver.releasePersistableUriPermission(Uri.parse(prior.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    /**
+     * Normalizes a native selection into an ordered batch. Durable (document-picker) URIs
+     * take a persistable grant so the reviewed source survives recreation; process-lifetime
+     * (Sharesheet EXTRA_STREAM) URIs are never persisted and are only valid while the process
+     * lives. Unreadable/unsafe items are rejected and reported, never sent.
+     */
+    @Synchronized fun prepareBatch(
+        uris: List<Uri>,
+        durable: Boolean,
+    ): Pair<List<PersistedDocumentDraft>, List<String>> {
+        releaseHeldGrants()
+        val accepted = mutableListOf<PersistedDocumentDraft>()
+        val rejected = mutableListOf<String>()
+        for (uri in uris.take(TRANSFER_MAX_BATCH_ITEMS)) {
+            val draft = runCatching { prepareOne(uri, durable) }.getOrNull()
+            if (draft != null) accepted += draft else rejected += displayNameOrUri(uri)
+        }
+        if (uris.size > TRANSFER_MAX_BATCH_ITEMS) {
+            rejected += "${uris.size - TRANSFER_MAX_BATCH_ITEMS} more over the $TRANSFER_MAX_BATCH_ITEMS-item limit"
+        }
+        write(accepted)
+        return accepted to rejected
+    }
+
+    private fun prepareOne(uri: Uri, durable: Boolean): PersistedDocumentDraft {
+        if (durable) {
+            // Temporary grants throw here; document-picker grants are persistable.
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val metadata = metadata(uri)
+        requireSafeName(metadata.first)
+        val digest = MessageDigest.getInstance("SHA-256")
+        var count = 0L
+        resolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(256 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read == 0) continue
+                digest.update(buffer, 0, read)
+                count += read
             }
-            value
+        } ?: error("source_unavailable")
+        if (metadata.second != null && metadata.second != count) error("source_changed")
+        return PersistedDocumentDraft(
+            UUID.randomUUID(), uri.toString(), metadata.first,
+            resolver.getType(uri) ?: "application/octet-stream", count, digest.digest(),
+            processLifetime = !durable,
+        )
+    }
+
+    @Synchronized fun clear() {
+        releaseHeldGrants()
+        write(emptyList())
+    }
+
+    private fun releaseHeldGrants() {
+        read().filter { !it.processLifetime }.forEach { draft ->
+            runCatching {
+                resolver.releasePersistableUriPermission(Uri.parse(draft.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         }
     }
+
+    private fun displayNameOrUri(uri: Uri): String =
+        runCatching { metadata(uri).first }.getOrDefault(uri.lastPathSegment ?: uri.toString())
 
     fun validate(value: PersistedDocumentDraft) {
         val uri = Uri.parse(value.uri)
@@ -167,15 +217,21 @@ private class DocumentDraftRepository(private val context: Context) {
     private fun Cursor.longOrNull(column: String): Long? =
         getColumnIndex(column).takeIf { it >= 0 && !isNull(it) }?.let(::getLong)
 
-    private fun write(value: PersistedDocumentDraft) {
-        val document = JSONObject()
-            .put("schema", 1)
-            .put("itemId", value.itemId.toString())
-            .put("uri", value.uri)
-            .put("displayName", value.displayName)
-            .put("mediaType", value.mediaType)
-            .put("byteCount", value.byteCount)
-            .put("sha256", Base64.getEncoder().encodeToString(value.sha256))
+    private fun write(items: List<PersistedDocumentDraft>) {
+        val array = org.json.JSONArray()
+        items.forEach { value ->
+            array.put(
+                JSONObject()
+                    .put("itemId", value.itemId.toString())
+                    .put("uri", value.uri)
+                    .put("displayName", value.displayName)
+                    .put("mediaType", value.mediaType)
+                    .put("byteCount", value.byteCount)
+                    .put("sha256", Base64.getEncoder().encodeToString(value.sha256))
+                    .put("processLifetime", value.processLifetime),
+            )
+        }
+        val document = JSONObject().put("schema", 2).put("items", array)
         val stream = file.startWrite()
         try {
             stream.write(document.toString().encodeToByteArray())
@@ -367,7 +423,9 @@ class AndroidOutboundRuntime(
     private val controlExecutor = Executors.newCachedThreadPool()
     private val observers = CopyOnWriteArraySet<(AndroidOutboundSnapshot) -> Unit>()
     private val documents = DocumentDraftRepository(context)
-    private val stateStore = AndroidOutboundStateStore(AndroidOutboundSnapshot(draft = documents.read()))
+    private val stateStore = AndroidOutboundStateStore(
+        AndroidOutboundSnapshot(drafts = documents.read()).let { it.copy(totalItems = it.drafts.size) },
+    )
     private val browser = AndroidLanBrowser(context, trustRepository) { routes ->
         mutate { state ->
             state.copy(onlinePeerIds = routes.keys.intersect(trustRepository.peers().map { it.keyIdHex }.toSet()))
@@ -387,12 +445,32 @@ class AndroidOutboundRuntime(
     fun startDiscovery() = browser.start()
     fun stopDiscovery() = browser.close()
 
-    fun prepare(uri: Uri) {
-        if (!stateStore.beginPreparation()) return
+    /** Document-picker entry point (durable, restart-safe source). */
+    fun prepareDocuments(uris: List<Uri>) = prepareBatch(uris, durable = true)
+
+    /** Sharesheet entry point (process-lifetime source; restart-safe resume unavailable). */
+    fun prepareShared(uris: List<Uri>) = prepareBatch(uris, durable = false)
+
+    private fun prepareBatch(uris: List<Uri>, durable: Boolean) {
+        if (uris.isEmpty() || !stateStore.beginPreparation()) return
         notifyObservers()
         executor.execute {
-            runCatching { documents.prepare(uri) }
-                .onSuccess { draft -> mutate { it.copy(draft = draft, preparing = false, phase = null, failure = null) } }
+            runCatching { documents.prepareBatch(uris, durable) }
+                .onSuccess { (accepted, rejected) ->
+                    mutate {
+                        it.copy(
+                            drafts = accepted,
+                            rejected = rejected,
+                            totalItems = accepted.size,
+                            completedItems = 0,
+                            transferredBytes = 0,
+                            totalBytes = accepted.sumOf { d -> d.byteCount },
+                            preparing = false,
+                            phase = null,
+                            failure = null,
+                        )
+                    }
+                }
                 .onFailure { error -> mutate {
                     it.copy(
                         preparing = false,
@@ -407,17 +485,29 @@ class AndroidOutboundRuntime(
         if (state.active) state else state.copy(selectedPeerId = peerId, failure = null)
     }
 
+    fun clearSelection() {
+        if (stateStore.snapshot().active) return
+        executor.execute { runCatching { documents.clear() } }
+        mutate {
+            it.copy(drafts = emptyList(), rejected = emptyList(), totalItems = 0, totalBytes = 0, phase = null)
+        }
+    }
+
     fun send() {
         if (!stateStore.beginSend()) return
         val starting = stateStore.snapshot()
-        val draft = starting.draft ?: return
+        val drafts = starting.drafts
+        if (drafts.isEmpty()) return
         val peer = starting.selectedPeerId ?: return
         notifyObservers()
         executor.execute {
             val outcome = runCatching {
                 runSuspend {
                     session.execute(
-                        OutboundTransferIntent(peer.outboundHexData(), AndroidDocumentPayload(draft, documents)),
+                        OutboundTransferIntent(
+                            peer.outboundHexData(),
+                            drafts.map { AndroidDocumentPayload(it, documents) },
+                        ),
                         TransferEventSink { event -> apply(event) },
                     )
                 }
@@ -455,6 +545,9 @@ class AndroidOutboundRuntime(
             phase = event.phase,
             transferredBytes = event.transferredBytes,
             totalBytes = event.totalBytes,
+            completedItems = event.completedItems,
+            totalItems = if (event.totalItems > 0) event.totalItems else state.totalItems,
+            currentItemName = event.currentItemName.ifEmpty { state.currentItemName },
             failure = if (event.phase == TransferActivityPhase.COMPLETED) null else state.failure,
         )
     }
